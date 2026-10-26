@@ -1,3 +1,7 @@
+
+-- EasySenp Script
+-- LocalScript -> StarterPlayer -> StarterPlayerScripts
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,6 +20,7 @@ local WHEELIE_RESPONSE = 5
 local WHEELIE_TORQUE = 25000
 local ATTACH_CHECK_INTERVAL = 0.15
 local ATTACH_DISTANCE = 5
+local FARM_GROUND_PAUSE = 1
 
 local wheelieConnection
 local wheelieAttachment
@@ -57,7 +62,7 @@ local dragArea = Instance.new("TextButton")
 dragArea.Size = UDim2.new(1, 0, 0, 48)
 dragArea.BackgroundColor3 = Color3.fromRGB(65, 35, 100)
 dragArea.BorderSizePixel = 0
-dragArea.Text = "EasySenp Script V1"
+dragArea.Text = "EasySenp Script"
 dragArea.TextColor3 = Color3.new(1, 1, 1)
 dragArea.TextSize = 20
 dragArea.Font = Enum.Font.GothamBold
@@ -179,7 +184,7 @@ toggleButton.Activated:Connect(function()
 	end
 end)
 
--- Vehicle helpers
+-- VEHICLE HELPERS
 local function getVehicle()
 	local character = player.Character
 	if not character then
@@ -315,8 +320,6 @@ local function startWheelie()
 			return
 		end
 
-		-- Read yaw every frame so steering direction can change.
-		-- Keep the 45-degree pitch while following the scooter's heading.
 		local look = wheelieRoot.CFrame.LookVector
 		local flatLook = Vector3.new(look.X, 0, look.Z)
 
@@ -326,7 +329,6 @@ local function startWheelie()
 			local yaw = math.atan2(-flatLook.X, -flatLook.Z)
 			local heading = CFrame.Angles(0, yaw, 0)
 
-			-- The wheelie tilt is relative to the current heading.
 			align.CFrame = heading.Rotation
 				* CFrame.Angles(WHEELIE_ANGLE, 0, 0)
 		end
@@ -528,15 +530,18 @@ local function doFarmCycle(token)
 
 	stopWheelie()
 
+	-- Launch upward.
 	setPivot(vehicle, startCF + Vector3.new(0, 18, 0))
 	task.wait(0.1)
 
+	-- Perform 5 backflips.
 	for _ = 1, 5 do
 		if not animateRotation(vehicle, math.rad(360), 0.22, token) then
 			return false
 		end
 	end
 
+	-- Perform 5 spins of 360 degrees.
 	for _ = 1, 5 do
 		if not animateSpin(vehicle, 0.18, token) then
 			return false
@@ -547,12 +552,24 @@ local function doFarmCycle(token)
 		return false
 	end
 
+	-- Land near the ground.
 	local current = getPivot(vehicle)
 	if current then
 		setPivot(
 			vehicle,
 			CFrame.new(current.Position.X, groundY + 3, current.Position.Z)
 		)
+	end
+
+	-- Wait 1 second on the ground before the next cycle.
+	local elapsed = 0
+
+	while elapsed < FARM_GROUND_PAUSE do
+		if not runningFarm or farmToken ~= token or guiDestroyed then
+			return false
+		end
+
+		elapsed += RunService.Heartbeat:Wait()
 	end
 
 	return true
@@ -580,7 +597,15 @@ farmButton.Activated:Connect(function()
 
 	task.spawn(function()
 		while runningFarm and farmToken == token and not guiDestroyed do
-			doFarmCycle(token)
+			local success = doFarmCycle(token)
+
+			if not success then
+				if runningFarm and farmToken == token and not guiDestroyed then
+					statusLabel.Text = "Money Farm paused. Check your scooter."
+					task.wait(0.5)
+				end
+			end
+
 			task.wait(0.1)
 		end
 	end)
