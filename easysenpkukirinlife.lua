@@ -812,11 +812,16 @@ toggleButton.Activated:Connect(function()
 end)
 
 --==================================================
--- KEY SYSTEM (KEY: 1234)
+-- PANDA AUTH KEY SYSTEM
 --==================================================
 
-local ACCESS_KEY = "1234"
+local PANDA_AUTH_URL = "https://secure.pandauth.com/pv4/lib"
+local PANDA_SERVICE_ID = "easysenp"
+
 local authorized = false
+local PUSL = nil
+local authReady = false
+local validatingKey = false
 
 local keyOverlay = Instance.new("Frame")
 keyOverlay.Name = "KeySystemOverlay"
@@ -830,7 +835,7 @@ keyOverlay.Parent = gui
 
 local keyCard = Instance.new("Frame")
 keyCard.Name = "KeyCard"
-keyCard.Size = UDim2.fromOffset(360, 292)
+keyCard.Size = UDim2.fromOffset(360, 330)
 keyCard.AnchorPoint = Vector2.new(0.5, 0.5)
 keyCard.Position = UDim2.fromScale(0.5, 0.5)
 keyCard.BackgroundColor3 = COLORS.Background
@@ -865,7 +870,7 @@ local keySubtitle = Instance.new("TextLabel")
 keySubtitle.Size = UDim2.new(1, -24, 0, 20)
 keySubtitle.Position = UDim2.fromOffset(12, 44)
 keySubtitle.BackgroundTransparency = 1
-keySubtitle.Text = "ENTER YOUR KEY TO CONTINUE"
+keySubtitle.Text = "SECURE VERIFICATION • PANDA AUTH"
 keySubtitle.TextColor3 = Color3.fromRGB(235, 217, 255)
 keySubtitle.TextSize = 9
 keySubtitle.Font = Enum.Font.GothamBold
@@ -874,16 +879,16 @@ keySubtitle.Parent = keyHeader
 
 local keyInput = Instance.new("TextBox")
 keyInput.Name = "KeyInput"
-keyInput.Size = UDim2.new(1, -40, 0, 46)
-keyInput.Position = UDim2.fromOffset(20, 106)
+keyInput.Size = UDim2.new(1, -40, 0, 43)
+keyInput.Position = UDim2.fromOffset(20, 101)
 keyInput.BackgroundColor3 = COLORS.Panel
 keyInput.BorderSizePixel = 0
-keyInput.PlaceholderText = "Enter key..."
+keyInput.PlaceholderText = "Enter your Panda Auth key..."
 keyInput.PlaceholderColor3 = COLORS.Muted
 keyInput.Text = ""
 keyInput.TextColor3 = COLORS.Text
-keyInput.TextSize = 16
-keyInput.Font = Enum.Font.GothamBold
+keyInput.TextSize = 13
+keyInput.Font = Enum.Font.Code
 keyInput.ClearTextOnFocus = false
 keyInput.TextXAlignment = Enum.TextXAlignment.Center
 keyInput.ZIndex = 22
@@ -892,23 +897,24 @@ addCorner(keyInput, 10)
 addStroke(keyInput, COLORS.Border, 1, 0.15)
 
 local keyError = Instance.new("TextLabel")
-keyError.Size = UDim2.new(1, -36, 0, 20)
-keyError.Position = UDim2.fromOffset(20, 155)
+keyError.Size = UDim2.new(1, -36, 0, 28)
+keyError.Position = UDim2.fromOffset(20, 148)
 keyError.BackgroundTransparency = 1
-keyError.Text = "Key required"
+keyError.Text = "Connecting to Panda Auth..."
 keyError.TextColor3 = COLORS.Muted
 keyError.TextSize = 10
+keyError.TextWrapped = true
 keyError.Font = Enum.Font.GothamMedium
 keyError.ZIndex = 22
 keyError.Parent = keyCard
 
 local unlockButton = Instance.new("TextButton")
-unlockButton.Name = "UnlockButton"
-unlockButton.Size = UDim2.new(1, -36, 0, 43)
-unlockButton.Position = UDim2.fromOffset(18, 186)
+unlockButton.Name = "VerifyKeyButton"
+unlockButton.Size = UDim2.new(1, -36, 0, 41)
+unlockButton.Position = UDim2.fromOffset(18, 183)
 unlockButton.BackgroundColor3 = COLORS.Purple
 unlockButton.BorderSizePixel = 0
-unlockButton.Text = "UNLOCK  →"
+unlockButton.Text = "VERIFY KEY  →"
 unlockButton.TextColor3 = COLORS.Text
 unlockButton.TextSize = 13
 unlockButton.Font = Enum.Font.GothamBold
@@ -918,9 +924,25 @@ unlockButton.Parent = keyCard
 addCorner(unlockButton, 10)
 addGradient(unlockButton, Color3.fromRGB(157, 91, 255), Color3.fromRGB(91, 49, 155), 0)
 
+local getKeyButton = Instance.new("TextButton")
+getKeyButton.Name = "GetKeyButton"
+getKeyButton.Size = UDim2.new(1, -36, 0, 32)
+getKeyButton.Position = UDim2.fromOffset(18, 231)
+getKeyButton.BackgroundColor3 = COLORS.Button
+getKeyButton.BorderSizePixel = 0
+getKeyButton.Text = "GET KEY  ↗"
+getKeyButton.TextColor3 = Color3.fromRGB(211, 185, 255)
+getKeyButton.TextSize = 11
+getKeyButton.Font = Enum.Font.GothamBold
+getKeyButton.AutoButtonColor = false
+getKeyButton.ZIndex = 22
+getKeyButton.Parent = keyCard
+addCorner(getKeyButton, 9)
+addStroke(getKeyButton, COLORS.Purple, 1, 0.35)
+
 local keyFootnote = Instance.new("TextLabel")
 keyFootnote.Size = UDim2.new(1, -24, 0, 18)
-keyFootnote.Position = UDim2.fromOffset(12, 250)
+keyFootnote.Position = UDim2.fromOffset(12, 285)
 keyFootnote.BackgroundTransparency = 1
 keyFootnote.Text = "EasySenp • Scooter Control Center"
 keyFootnote.TextColor3 = COLORS.Muted
@@ -929,30 +951,144 @@ keyFootnote.Font = Enum.Font.Gotham
 keyFootnote.ZIndex = 22
 keyFootnote.Parent = keyCard
 
-local function submitKey()
-    if authorized or guiDestroyed then
+-- Load and configure Panda Auth. Do not use a hardcoded local key.
+task.spawn(function()
+    local loaded, libraryOrError = pcall(function()
+        return loadstring(game:HttpGet(PANDA_AUTH_URL))()
+    end)
+
+    if not loaded or type(libraryOrError) ~= "table"
+        or type(libraryOrError.configure) ~= "function" then
+        keyError.Text = "Panda Auth library failed to load."
+        keyError.TextColor3 = COLORS.Red
+        unlockButton.Active = false
+        unlockButton.Text = "AUTH UNAVAILABLE"
+        warn("[Panda] Library failed to initialize:", libraryOrError)
         return
     end
 
-    if keyInput.Text == ACCESS_KEY then
-        authorized = true
-        keyError.Text = "Access granted!"
-        keyError.TextColor3 = COLORS.Green
-        unlockButton.Text = "ACCESS GRANTED ✓"
-        unlockButton.BackgroundColor3 = COLORS.Green
-        task.wait(0.25)
-        if guiDestroyed then
+    PUSL = libraryOrError
+
+    local configured, configError = pcall(function()
+        PUSL.configure({
+            serviceId = PANDA_SERVICE_ID,
+        })
+    end)
+
+    if not configured then
+        keyError.Text = "Panda Auth configuration failed."
+        keyError.TextColor3 = COLORS.Red
+        unlockButton.Active = false
+        unlockButton.Text = "AUTH UNAVAILABLE"
+        warn("[Panda] Configuration failed:", configError)
+        return
+    end
+
+    authReady = true
+    keyError.Text = "Panda Auth ready. Enter your key."
+    keyError.TextColor3 = COLORS.Green
+end)
+
+getKeyButton.Activated:Connect(function()
+    if not PUSL then
+        keyError.Text = "Panda Auth is not ready yet."
+        keyError.TextColor3 = COLORS.Red
+        return
+    end
+
+    local ok, url = pcall(function()
+        return PUSL.getKeyUrl()
+    end)
+
+    if not ok or type(url) ~= "string" then
+        keyError.Text = "Could not retrieve the key URL."
+        keyError.TextColor3 = COLORS.Red
+        return
+    end
+
+    if type(setclipboard) == "function" then
+        local copied = pcall(setclipboard, url)
+        if copied then
+            keyError.Text = "Key URL copied to clipboard."
+            keyError.TextColor3 = COLORS.Green
+        else
+            keyError.Text = "Could not copy URL. Check console."
+            keyError.TextColor3 = COLORS.Red
+            warn("[Panda] Get key URL:", url)
+        end
+    else
+        keyError.Text = "Key URL printed to console."
+        keyError.TextColor3 = COLORS.Muted
+        warn("[Panda] Get key URL:", url)
+    end
+end)
+
+local function submitKey()
+    if authorized or guiDestroyed or validatingKey then
+        return
+    end
+
+    if not authReady or not PUSL then
+        keyError.Text = "Wait for Panda Auth to initialize."
+        keyError.TextColor3 = COLORS.Red
+        return
+    end
+
+    local enteredKey = keyInput.Text
+    if enteredKey == "" then
+        keyError.Text = "Enter your Panda Auth key first."
+        keyError.TextColor3 = COLORS.Red
+        return
+    end
+
+    validatingKey = true
+    unlockButton.Active = false
+    unlockButton.Text = "VERIFYING..."
+    keyError.Text = "Validating key with Panda Auth..."
+    keyError.TextColor3 = COLORS.Muted
+
+    task.spawn(function()
+        local callOK, result = pcall(function()
+            return PUSL.validate(enteredKey)
+        end)
+
+        if not callOK or type(result) ~= "table" then
+            keyError.Text = "Validation request failed. Try again."
+            keyError.TextColor3 = COLORS.Red
+            warn("[Panda] Validation error:", result)
+            validatingKey = false
+            unlockButton.Active = true
+            unlockButton.Text = "VERIFY KEY  →"
             return
         end
-        keyOverlay.Visible = false
-        panel.Visible = true
-        toggleButton.Visible = true
-    else
-        keyError.Text = "Wrong key. Try again."
-        keyError.TextColor3 = COLORS.Red
-        keyInput.Text = ""
-        keyInput:CaptureFocus()
-    end
+
+        if result.success then
+            authorized = true
+            keyError.Text = "Access granted!"
+            keyError.TextColor3 = COLORS.Green
+            unlockButton.Text = "ACCESS GRANTED ✓"
+            unlockButton.BackgroundColor3 = COLORS.Green
+
+            print("[Panda] Authenticated. Premium:", result.isPremium)
+
+            task.wait(0.35)
+            if guiDestroyed then
+                return
+            end
+
+            keyOverlay.Visible = false
+            panel.Visible = true
+            toggleButton.Visible = true
+        else
+            keyError.Text = "Invalid key or access denied."
+            keyError.TextColor3 = COLORS.Red
+            keyInput.Text = ""
+            keyInput:CaptureFocus()
+            validatingKey = false
+            unlockButton.Active = true
+            unlockButton.Text = "VERIFY KEY  →"
+        end
+    end)
 end
 
 unlockButton.Activated:Connect(submitKey)
