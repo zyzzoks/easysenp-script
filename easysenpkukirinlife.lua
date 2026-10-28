@@ -4,8 +4,7 @@
 
     Features:
     - Refined, aligned purple GUI
-    - Dashboard, Home, Customization and UI Settings tabs
-    - UI scaling, panel transparency and theme presets
+    - Home and scooter customization tabs
     - Auto Wheelie
     - Attach to Scooter
     - Money Farm
@@ -62,7 +61,6 @@ local COLORS = {
 local runningFarm = false
 local autoWheelie = false
 local attachEnabled = false
-local rainbowEnabled = false
 local guiDestroyed = false
 
 local farmToken = 0
@@ -194,27 +192,21 @@ gui.Parent = playerGui
 local panel = Instance.new("Frame")
 panel.Name = "MainPanel"
 panel.Size = UDim2.fromOffset(390, 570)
-panel.AnchorPoint = Vector2.new(0.5, 0.5)
-panel.Position = UDim2.fromScale(0.5, 0.5)
+panel.Position = UDim2.new(0.5, -195, 0.5, -285)
 panel.BackgroundColor3 = COLORS.Background
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
-panel.Visible = false -- Hidden until the access key is entered
+panel.Visible = true
 panel.Parent = gui
 
 addCorner(panel, 17)
-local panelStroke = addStroke(panel, COLORS.Purple, 1.5, 0.12)
-local panelGradient = addGradient(
+addStroke(panel, COLORS.Purple, 1.5, 0.12)
+addGradient(
     panel,
     Color3.fromRGB(31, 24, 46),
     Color3.fromRGB(15, 14, 22),
     90
 )
-
-local panelScale = Instance.new("UIScale")
-panelScale.Name = "MainUIScale"
-panelScale.Scale = 1
-panelScale.Parent = panel
 
 --==================================================
 -- HEADER
@@ -228,7 +220,7 @@ header.BorderSizePixel = 0
 header.Parent = panel
 
 addCorner(header, 17)
-local headerGradient = addGradient(
+addGradient(
     header,
     Color3.fromRGB(119, 66, 197),
     Color3.fromRGB(62, 39, 104),
@@ -281,26 +273,26 @@ local subtitle = makeLabel(
 subtitle.Font = Enum.Font.GothamMedium
 
 --==================================================
--- DASHBOARD / HOME / CUSTOMIZATION / UI SETTINGS TABS
+-- HOME / CUSTOMIZATION TABS
 --==================================================
 
 local tabBar = Instance.new("Frame")
 tabBar.Name = "TabBar"
-tabBar.Size = UDim2.new(1, -28, 0, 70)
-tabBar.Position = UDim2.fromOffset(14, 87)
+tabBar.Size = UDim2.new(1, -28, 0, 36)
+tabBar.Position = UDim2.fromOffset(14, 88)
 tabBar.BackgroundTransparency = 1
 tabBar.Parent = panel
 
-local function makeTab(name, text, column, row)
+local function makeTab(name, text, x)
     local button = Instance.new("TextButton")
     button.Name = name .. "Tab"
-    button.Size = UDim2.new(0.5, -6, 0, 32)
-    button.Position = UDim2.new(column * 0.5, column == 0 and 0 or 6, 0, row * 37)
+    button.Size = UDim2.new(0.5, -4, 1, 0)
+    button.Position = UDim2.new(x, x == 0 and 0 or 8, 0, 0)
     button.BackgroundColor3 = COLORS.Button
     button.BorderSizePixel = 0
     button.Text = text
     button.TextColor3 = COLORS.Muted
-    button.TextSize = 10
+    button.TextSize = 12
     button.Font = Enum.Font.GothamBold
     button.TextWrapped = false
     button.AutoButtonColor = false
@@ -310,86 +302,45 @@ local function makeTab(name, text, column, row)
     return button
 end
 
-local dashboardTab = makeTab("Dashboard", "▦   DASHBOARD", 0, 0)
-local homeTab = makeTab("Home", "⌂   HOME", 1, 0)
-local customizationTab = makeTab("Customization", "✦   CUSTOMIZATION", 0, 1)
-local uiSettingsTab = makeTab("UISettings", "⚙   UI SETTINGS", 1, 1)
+local homeTab = makeTab("Home", "⌂   HOME", 0)
+local customizationTab = makeTab("Customization", "✦   CUSTOMIZATION", 0.5)
 
-local function makePage(name, scrolling)
-    local page
-    if scrolling then
-        page = Instance.new("ScrollingFrame")
-        page.ScrollBarThickness = 3
-        page.CanvasSize = UDim2.new(0, 0, 0, 326)
-    else
-        page = Instance.new("Frame")
-    end
-    page.Name = name
-    page.Position = UDim2.fromOffset(12, 168)
-    page.Size = UDim2.new(1, -24, 1, -180)
-    page.BackgroundTransparency = 1
-    page.BorderSizePixel = 0
-    page.Visible = false
-    page.Parent = panel
-    return page
-end
+local homePage = Instance.new("Frame")
+homePage.Name = "HomePage"
+homePage.Position = UDim2.fromOffset(12, 132)
+homePage.Size = UDim2.new(1, -24, 1, -144)
+homePage.BackgroundTransparency = 1
+homePage.Parent = panel
 
-local dashboardPage = makePage("DashboardPage", false)
-local homePage = makePage("HomePage", false)
-local customizationPage = makePage("CustomizationPage", true)
-local uiSettingsPage = makePage("UISettingsPage", true)
-uiSettingsPage.CanvasSize = UDim2.new(0, 0, 0, 430)
-
-local pageMap = {
-    Dashboard = dashboardPage,
-    Home = homePage,
-    Customization = customizationPage,
-    UISettings = uiSettingsPage,
-}
-
-local tabMap = {
-    Dashboard = dashboardTab,
-    Home = homeTab,
-    Customization = customizationTab,
-    UISettings = uiSettingsTab,
-}
-
-local activePageName = "Dashboard"
+local customizationPage = Instance.new("ScrollingFrame")
+customizationPage.Name = "CustomizationPage"
+customizationPage.Position = UDim2.fromOffset(12, 132)
+customizationPage.Size = UDim2.new(1, -24, 1, -144)
+customizationPage.BackgroundTransparency = 1
+customizationPage.BorderSizePixel = 0
+customizationPage.ScrollBarThickness = 3
+customizationPage.CanvasSize = UDim2.new(0, 0, 0, 326)
+customizationPage.Visible = false
+customizationPage.Parent = panel
 
 local function showPage(pageName)
-    if not pageMap[pageName] then
-        pageName = "Dashboard"
-    end
-
-    activePageName = pageName
-    for name, page in pairs(pageMap) do
-        page.Visible = name == pageName
-    end
-
-    for name, button in pairs(tabMap) do
-        local active = name == pageName
-        TweenService:Create(button, TweenInfo.new(0.12), {
-            BackgroundColor3 = active and COLORS.Purple or COLORS.Button
-        }):Play()
-        button.TextColor3 = active and COLORS.Text or COLORS.Muted
-        local stroke = button:FindFirstChildOfClass("UIStroke")
-        if stroke then
-            stroke.Color = active and COLORS.Purple or COLORS.Border
-            stroke.Transparency = active and 0.08 or 0.4
-        end
-    end
+    local home = pageName == "Home"
+    homePage.Visible = home
+    customizationPage.Visible = not home
+    TweenService:Create(homeTab, TweenInfo.new(0.12), {BackgroundColor3 = home and COLORS.Purple or COLORS.Button}):Play()
+    homeTab.TextColor3 = home and COLORS.Text or COLORS.Muted
+    TweenService:Create(customizationTab, TweenInfo.new(0.12), {BackgroundColor3 = home and COLORS.Button or COLORS.Purple}):Play()
+    customizationTab.TextColor3 = home and COLORS.Muted or COLORS.Text
 end
 
-dashboardTab.Activated:Connect(function() showPage("Dashboard") end)
 homeTab.Activated:Connect(function() showPage("Home") end)
 customizationTab.Activated:Connect(function() showPage("Customization") end)
-uiSettingsTab.Activated:Connect(function() showPage("UISettings") end)
-showPage("Dashboard")
+showPage("Home")
 
 local tabDivider = Instance.new("Frame")
 tabDivider.Name = "TabDivider"
 tabDivider.Size = UDim2.new(1, -32, 0, 1)
-tabDivider.Position = UDim2.fromOffset(16, 162)
+tabDivider.Position = UDim2.fromOffset(16, 127)
 tabDivider.BackgroundColor3 = COLORS.Border
 tabDivider.BackgroundTransparency = 0.45
 tabDivider.BorderSizePixel = 0
@@ -634,8 +585,6 @@ local statusLabel = makeLabel(
 )
 statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-local refreshDashboard
-
 local function setStatus(message, color)
     if guiDestroyed then
         return
@@ -646,135 +595,7 @@ local function setStatus(message, color)
     if color then
         statusDot.BackgroundColor3 = color
     end
-
-    if refreshDashboard then
-        refreshDashboard()
-    end
 end
-
---==================================================
--- DASHBOARD CONTENT
---==================================================
-
-local dashboardWelcome = Instance.new("Frame")
-dashboardWelcome.Name = "DashboardWelcome"
-dashboardWelcome.Size = UDim2.new(1, -8, 0, 72)
-dashboardWelcome.Position = UDim2.fromOffset(4, 4)
-dashboardWelcome.BackgroundColor3 = COLORS.Panel
-dashboardWelcome.BorderSizePixel = 0
-dashboardWelcome.Parent = dashboardPage
-addCorner(dashboardWelcome, 12)
-addStroke(dashboardWelcome, COLORS.Border, 1, 0.35)
-addGradient(dashboardWelcome, Color3.fromRGB(48, 34, 72), Color3.fromRGB(27, 23, 39), 0)
-
-local dashboardWelcomeTitle = makeLabel(
-    dashboardWelcome, "DashboardWelcomeTitle", "WELCOME BACK",
-    UDim2.new(1, -24, 0, 26), UDim2.fromOffset(14, 10), 15, COLORS.Text
-)
-dashboardWelcomeTitle.Font = Enum.Font.GothamBlack
-local dashboardWelcomeText = makeLabel(
-    dashboardWelcome, "DashboardWelcomeText", "Your scooter controls at a glance.",
-    UDim2.new(1, -24, 0, 20), UDim2.fromOffset(14, 39), 10, COLORS.Muted
-)
-
-local dashboardStatusCard = Instance.new("Frame")
-dashboardStatusCard.Name = "DashboardStatusCard"
-dashboardStatusCard.Size = UDim2.new(1, -8, 0, 68)
-dashboardStatusCard.Position = UDim2.fromOffset(4, 86)
-dashboardStatusCard.BackgroundColor3 = COLORS.Panel
-dashboardStatusCard.BorderSizePixel = 0
-dashboardStatusCard.Parent = dashboardPage
-addCorner(dashboardStatusCard, 11)
-addStroke(dashboardStatusCard, COLORS.Border, 1, 0.35)
-
-local dashboardStatusTitle = makeLabel(
-    dashboardStatusCard, "DashboardStatusTitle", "CURRENT STATUS",
-    UDim2.new(1, -24, 0, 18), UDim2.fromOffset(13, 8), 9, COLORS.Muted
-)
-dashboardStatusTitle.Font = Enum.Font.GothamBold
-local dashboardStatusLabel = makeLabel(
-    dashboardStatusCard, "DashboardStatusLabel", "Ready",
-    UDim2.new(1, -24, 0, 21), UDim2.fromOffset(13, 30), 11, COLORS.Text
-)
-dashboardStatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
-
-local dashboardActiveBadge = Instance.new("TextLabel")
-dashboardActiveBadge.Name = "DashboardActiveBadge"
-dashboardActiveBadge.Size = UDim2.fromOffset(95, 25)
-dashboardActiveBadge.Position = UDim2.new(1, -108, 0, 10)
-dashboardActiveBadge.BackgroundColor3 = Color3.fromRGB(34, 72, 57)
-dashboardActiveBadge.BorderSizePixel = 0
-dashboardActiveBadge.Text = "0 ACTIVE"
-dashboardActiveBadge.TextColor3 = COLORS.Green
-dashboardActiveBadge.TextSize = 9
-dashboardActiveBadge.Font = Enum.Font.GothamBold
-dashboardActiveBadge.Parent = dashboardStatusCard
-addCorner(dashboardActiveBadge, 8)
-
-local dashboardQuickTitle = makeLabel(
-    dashboardPage, "DashboardQuickTitle", "QUICK NAVIGATION",
-    UDim2.new(1, -8, 0, 20), UDim2.fromOffset(4, 165), 10, COLORS.Muted
-)
-dashboardQuickTitle.Font = Enum.Font.GothamBold
-
-local dashboardHomeButton = makeButton(
-    dashboardPage, "DashboardGoHome", "OPEN HOME", UDim2.fromOffset(4, 190),
-    UDim2.new(0.5, -6, 0, 39), COLORS.Button
-)
-local dashboardCustomizationButton = makeButton(
-    dashboardPage, "DashboardGoCustomization", "SCOOTER COLORS", UDim2.new(0.5, 2, 0, 190),
-    UDim2.new(0.5, -6, 0, 39), COLORS.Button
-)
-dashboardHomeButton.Activated:Connect(function() showPage("Home") end)
-dashboardCustomizationButton.Activated:Connect(function() showPage("Customization") end)
-
-local dashboardFeatureCard = Instance.new("Frame")
-dashboardFeatureCard.Name = "DashboardFeatureCard"
-dashboardFeatureCard.Size = UDim2.new(1, -8, 0, 82)
-dashboardFeatureCard.Position = UDim2.fromOffset(4, 239)
-dashboardFeatureCard.BackgroundColor3 = Color3.fromRGB(23, 22, 32)
-dashboardFeatureCard.BorderSizePixel = 0
-dashboardFeatureCard.Parent = dashboardPage
-addCorner(dashboardFeatureCard, 11)
-addStroke(dashboardFeatureCard, COLORS.Border, 1, 0.4)
-
-local dashboardFeatureTitle = makeLabel(
-    dashboardFeatureCard, "DashboardFeatureTitle", "FEATURES",
-    UDim2.new(1, -24, 0, 17), UDim2.fromOffset(13, 7), 9, COLORS.Muted
-)
-dashboardFeatureTitle.Font = Enum.Font.GothamBold
-local dashboardFeatureText = makeLabel(
-    dashboardFeatureCard, "DashboardFeatureText", "Wheelie OFF  •  Attach OFF  •  Farm OFF",
-    UDim2.new(1, -24, 0, 40), UDim2.fromOffset(13, 29), 10, COLORS.Text
-)
-dashboardFeatureText.TextWrapped = true
-
-refreshDashboard = function()
-    if not dashboardStatusLabel or not dashboardStatusLabel.Parent then
-        return
-    end
-    dashboardStatusLabel.Text = statusLabel.Text
-
-    local activeCount = 0
-    if autoWheelie then activeCount += 1 end
-    if attachEnabled then activeCount += 1 end
-    if runningFarm then activeCount += 1 end
-    if rainbowEnabled then activeCount += 1 end
-
-    dashboardActiveBadge.Text = tostring(activeCount) .. " ACTIVE"
-    dashboardActiveBadge.TextColor3 = activeCount > 0 and COLORS.Green or COLORS.Muted
-    dashboardActiveBadge.BackgroundColor3 = activeCount > 0
-        and Color3.fromRGB(34, 72, 57) or Color3.fromRGB(42, 38, 51)
-
-    dashboardFeatureText.Text = string.format(
-        "Wheelie %s  •  Attach %s\nMoney Farm %s  •  Rainbow %s",
-        autoWheelie and "ON" or "OFF",
-        attachEnabled and "ON" or "OFF",
-        runningFarm and "ON" or "OFF",
-        rainbowEnabled and "ON" or "OFF"
-    )
-end
-refreshDashboard()
 
 --==================================================
 -- FLOATING ES BUTTON
@@ -791,12 +612,12 @@ toggleButton.TextColor3 = Color3.new(1, 1, 1)
 toggleButton.TextSize = 19
 toggleButton.Font = Enum.Font.GothamBlack
 toggleButton.AutoButtonColor = false
-toggleButton.Visible = false -- Hidden until the access key is entered
+toggleButton.Visible = true
 toggleButton.Parent = gui
 
 addCorner(toggleButton, 15)
 addStroke(toggleButton, Color3.fromRGB(213, 184, 255), 1.5, 0.15)
-local toggleGradient = addGradient(
+addGradient(
     toggleButton,
     Color3.fromRGB(157, 91, 255),
     Color3.fromRGB(79, 45, 139),
@@ -809,157 +630,6 @@ toggleButton.Activated:Connect(function()
     end
 
     panel.Visible = not panel.Visible
-end)
-
---==================================================
--- KEY SYSTEM (KEY: 1234)
---==================================================
-
-local ACCESS_KEY = "1234"
-local authorized = false
-
-local keyOverlay = Instance.new("Frame")
-keyOverlay.Name = "KeySystemOverlay"
-keyOverlay.Size = UDim2.fromScale(1, 1)
-keyOverlay.Position = UDim2.fromScale(0, 0)
-keyOverlay.BackgroundColor3 = Color3.fromRGB(7, 6, 12)
-keyOverlay.BackgroundTransparency = 0.12
-keyOverlay.BorderSizePixel = 0
-keyOverlay.ZIndex = 20
-keyOverlay.Parent = gui
-
-local keyCard = Instance.new("Frame")
-keyCard.Name = "KeyCard"
-keyCard.Size = UDim2.fromOffset(360, 292)
-keyCard.AnchorPoint = Vector2.new(0.5, 0.5)
-keyCard.Position = UDim2.fromScale(0.5, 0.5)
-keyCard.BackgroundColor3 = COLORS.Background
-keyCard.BorderSizePixel = 0
-keyCard.ZIndex = 21
-keyCard.Parent = keyOverlay
-addCorner(keyCard, 18)
-addStroke(keyCard, COLORS.Purple, 1.5, 0.08)
-addGradient(keyCard, Color3.fromRGB(37, 26, 55), Color3.fromRGB(17, 15, 25), 90)
-
-local keyHeader = Instance.new("Frame")
-keyHeader.Size = UDim2.new(1, 0, 0, 80)
-keyHeader.BackgroundColor3 = COLORS.Header
-keyHeader.BorderSizePixel = 0
-keyHeader.ZIndex = 22
-keyHeader.Parent = keyCard
-addCorner(keyHeader, 17)
-addGradient(keyHeader, Color3.fromRGB(157, 91, 255), Color3.fromRGB(75, 44, 130), 0)
-
-local keyTitle = Instance.new("TextLabel")
-keyTitle.Size = UDim2.new(1, -24, 0, 34)
-keyTitle.Position = UDim2.fromOffset(12, 10)
-keyTitle.BackgroundTransparency = 1
-keyTitle.Text = "EASYSENP ACCESS"
-keyTitle.TextColor3 = COLORS.Text
-keyTitle.TextSize = 21
-keyTitle.Font = Enum.Font.GothamBlack
-keyTitle.ZIndex = 23
-keyTitle.Parent = keyHeader
-
-local keySubtitle = Instance.new("TextLabel")
-keySubtitle.Size = UDim2.new(1, -24, 0, 20)
-keySubtitle.Position = UDim2.fromOffset(12, 44)
-keySubtitle.BackgroundTransparency = 1
-keySubtitle.Text = "ENTER YOUR KEY TO CONTINUE"
-keySubtitle.TextColor3 = Color3.fromRGB(235, 217, 255)
-keySubtitle.TextSize = 9
-keySubtitle.Font = Enum.Font.GothamBold
-keySubtitle.ZIndex = 23
-keySubtitle.Parent = keyHeader
-
-local keyInput = Instance.new("TextBox")
-keyInput.Name = "KeyInput"
-keyInput.Size = UDim2.new(1, -40, 0, 46)
-keyInput.Position = UDim2.fromOffset(20, 106)
-keyInput.BackgroundColor3 = COLORS.Panel
-keyInput.BorderSizePixel = 0
-keyInput.PlaceholderText = "Enter key..."
-keyInput.PlaceholderColor3 = COLORS.Muted
-keyInput.Text = ""
-keyInput.TextColor3 = COLORS.Text
-keyInput.TextSize = 16
-keyInput.Font = Enum.Font.GothamBold
-keyInput.ClearTextOnFocus = false
-keyInput.TextXAlignment = Enum.TextXAlignment.Center
-keyInput.ZIndex = 22
-keyInput.Parent = keyCard
-addCorner(keyInput, 10)
-addStroke(keyInput, COLORS.Border, 1, 0.15)
-
-local keyError = Instance.new("TextLabel")
-keyError.Size = UDim2.new(1, -36, 0, 20)
-keyError.Position = UDim2.fromOffset(20, 155)
-keyError.BackgroundTransparency = 1
-keyError.Text = "Key required"
-keyError.TextColor3 = COLORS.Muted
-keyError.TextSize = 10
-keyError.Font = Enum.Font.GothamMedium
-keyError.ZIndex = 22
-keyError.Parent = keyCard
-
-local unlockButton = Instance.new("TextButton")
-unlockButton.Name = "UnlockButton"
-unlockButton.Size = UDim2.new(1, -36, 0, 43)
-unlockButton.Position = UDim2.fromOffset(18, 186)
-unlockButton.BackgroundColor3 = COLORS.Purple
-unlockButton.BorderSizePixel = 0
-unlockButton.Text = "UNLOCK  →"
-unlockButton.TextColor3 = COLORS.Text
-unlockButton.TextSize = 13
-unlockButton.Font = Enum.Font.GothamBold
-unlockButton.AutoButtonColor = false
-unlockButton.ZIndex = 22
-unlockButton.Parent = keyCard
-addCorner(unlockButton, 10)
-addGradient(unlockButton, Color3.fromRGB(157, 91, 255), Color3.fromRGB(91, 49, 155), 0)
-
-local keyFootnote = Instance.new("TextLabel")
-keyFootnote.Size = UDim2.new(1, -24, 0, 18)
-keyFootnote.Position = UDim2.fromOffset(12, 250)
-keyFootnote.BackgroundTransparency = 1
-keyFootnote.Text = "EasySenp • Scooter Control Center"
-keyFootnote.TextColor3 = COLORS.Muted
-keyFootnote.TextSize = 9
-keyFootnote.Font = Enum.Font.Gotham
-keyFootnote.ZIndex = 22
-keyFootnote.Parent = keyCard
-
-local function submitKey()
-    if authorized or guiDestroyed then
-        return
-    end
-
-    if keyInput.Text == ACCESS_KEY then
-        authorized = true
-        keyError.Text = "Access granted!"
-        keyError.TextColor3 = COLORS.Green
-        unlockButton.Text = "ACCESS GRANTED ✓"
-        unlockButton.BackgroundColor3 = COLORS.Green
-        task.wait(0.25)
-        if guiDestroyed then
-            return
-        end
-        keyOverlay.Visible = false
-        panel.Visible = true
-        toggleButton.Visible = true
-    else
-        keyError.Text = "Wrong key. Try again."
-        keyError.TextColor3 = COLORS.Red
-        keyInput.Text = ""
-        keyInput:CaptureFocus()
-    end
-end
-
-unlockButton.Activated:Connect(submitKey)
-keyInput.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        submitKey()
-    end
 end)
 
 --==================================================
@@ -1035,6 +705,7 @@ end
 --==================================================
 
 local selectedScooterColor = Color3.fromRGB(157, 91, 255)
+local rainbowEnabled = false
 local rainbowConnection
 local colorButtons = {}
 local rainbowButton
@@ -1252,220 +923,7 @@ rainbowButton.Activated:Connect(function()
         end
         setStatus("Rainbow color disabled.", COLORS.Muted)
     end
-    if refreshDashboard then refreshDashboard() end
 end)
-
---==================================================
--- UI SETTINGS: SCALE / TRANSPARENCY / THEMES
---==================================================
-
-local currentThemeName = "Purple"
-local panelTransparencyLevel = 0
-local panelTransparencyValues = {0, 0.08, 0.16}
-local panelTransparencyNames = {"Solid", "Soft Glass", "Glass"}
-local currentTransparencyIndex = 1
-
-local themePresets = {
-    Purple = {
-        Accent = Color3.fromRGB(157, 91, 255),
-        HeaderA = Color3.fromRGB(119, 66, 197),
-        HeaderB = Color3.fromRGB(62, 39, 104),
-        PanelA = Color3.fromRGB(31, 24, 46),
-        PanelB = Color3.fromRGB(15, 14, 22),
-    },
-    Ocean = {
-        Accent = Color3.fromRGB(53, 174, 255),
-        HeaderA = Color3.fromRGB(36, 126, 190),
-        HeaderB = Color3.fromRGB(24, 65, 112),
-        PanelA = Color3.fromRGB(20, 34, 51),
-        PanelB = Color3.fromRGB(12, 18, 29),
-    },
-    Mint = {
-        Accent = Color3.fromRGB(54, 221, 165),
-        HeaderA = Color3.fromRGB(37, 157, 123),
-        HeaderB = Color3.fromRGB(23, 91, 77),
-        PanelA = Color3.fromRGB(19, 39, 36),
-        PanelB = Color3.fromRGB(12, 22, 22),
-    },
-}
-
-local uiSettingsTitle = makeLabel(
-    uiSettingsPage, "UISettingsTitle", "INTERFACE SETTINGS",
-    UDim2.new(1, -8, 0, 26), UDim2.fromOffset(4, 3), 14, COLORS.Text
-)
-uiSettingsTitle.Font = Enum.Font.GothamBold
-local uiSettingsDescription = makeLabel(
-    uiSettingsPage, "UISettingsDescription", "Adjust the panel to your preference.",
-    UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 29), 10, COLORS.Muted
-)
-
-local function makeSettingsCard(name, titleText, y, height)
-    local card = Instance.new("Frame")
-    card.Name = name
-    card.Size = UDim2.new(1, -8, 0, height)
-    card.Position = UDim2.fromOffset(4, y)
-    card.BackgroundColor3 = COLORS.Panel
-    card.BorderSizePixel = 0
-    card.Parent = uiSettingsPage
-    addCorner(card, 11)
-    addStroke(card, COLORS.Border, 1, 0.4)
-    local label = makeLabel(
-        card, name .. "Title", titleText,
-        UDim2.new(1, -20, 0, 18), UDim2.fromOffset(11, 8), 10, COLORS.Muted
-    )
-    label.Font = Enum.Font.GothamBold
-    return card
-end
-
-local scaleCard = makeSettingsCard("ScaleCard", "UI SCALE", 56, 77)
-local scaleValueLabel = makeLabel(
-    scaleCard, "ScaleValue", "100%",
-    UDim2.new(1, -150, 0, 28), UDim2.new(0.5, -50, 0, 37), 13, COLORS.Text
-)
-scaleValueLabel.TextXAlignment = Enum.TextXAlignment.Center
-scaleValueLabel.Font = Enum.Font.GothamBold
-local scaleDownButton = makeButton(
-    scaleCard, "ScaleDownButton", "−", UDim2.fromOffset(10, 34),
-    UDim2.fromOffset(54, 32), COLORS.Button
-)
-local scaleUpButton = makeButton(
-    scaleCard, "ScaleUpButton", "+", UDim2.new(1, -64, 0, 34),
-    UDim2.fromOffset(54, 32), COLORS.Button
-)
-
-local transparencyCard = makeSettingsCard("TransparencyCard", "PANEL TRANSPARENCY", 143, 70)
-local transparencyButton = makeButton(
-    transparencyCard, "TransparencyButton", "SOLID", UDim2.fromOffset(10, 32),
-    UDim2.new(1, -20, 0, 29), COLORS.Button
-)
-
-local themeCard = makeSettingsCard("ThemeCard", "COLOR THEME", 223, 88)
-local themeButtons = {}
-local themeButtonDefinitions = {
-    {Name = "Purple", Color = Color3.fromRGB(157, 91, 255)},
-    {Name = "Ocean", Color = Color3.fromRGB(53, 174, 255)},
-    {Name = "Mint", Color = Color3.fromRGB(54, 221, 165)},
-}
-for index, definition in ipairs(themeButtonDefinitions) do
-    local button = makeButton(
-        themeCard,
-        definition.Name .. "ThemeButton",
-        string.upper(definition.Name),
-        UDim2.new((index - 1) / 3, 10 * (index - 1), 0, 39),
-        UDim2.new(1 / 3, -16, 0, 31),
-        definition.Color:Lerp(COLORS.Background, 0.35)
-    )
-    button.BackgroundColor3 = definition.Color:Lerp(COLORS.Background, 0.45)
-    local outline = button:FindFirstChildOfClass("UIStroke")
-    if outline then
-        outline.Color = definition.Color
-    end
-    themeButtons[definition.Name] = button
-end
-
-local resetSettingsButton = makeButton(
-    uiSettingsPage, "ResetUISettingsButton", "RESET UI SETTINGS",
-    UDim2.fromOffset(4, 322), UDim2.new(1, -8, 0, 39), COLORS.Button
-)
-local uiSettingsHint = makeLabel(
-    uiSettingsPage, "UISettingsHint",
-    "Changes apply immediately and only affect this interface.",
-    UDim2.new(1, -8, 0, 34), UDim2.fromOffset(4, 367), 9, COLORS.Muted
-)
-uiSettingsHint.TextWrapped = true
-uiSettingsPage.CanvasSize = UDim2.new(0, 0, 0, 414)
-
-local function applyTheme(themeName)
-    local preset = themePresets[themeName]
-    if not preset then
-        return
-    end
-
-    currentThemeName = themeName
-    COLORS.Purple = preset.Accent
-    COLORS.Header = preset.HeaderA
-
-    panelStroke.Color = preset.Accent
-    panelGradient.Color = ColorSequence.new(preset.PanelA, preset.PanelB)
-    header.BackgroundColor3 = preset.HeaderA
-    headerGradient.Color = ColorSequence.new(preset.HeaderA, preset.HeaderB)
-
-    local logoStroke = logo:FindFirstChildOfClass("UIStroke")
-    if logoStroke then
-        logoStroke.Color = preset.Accent:Lerp(Color3.new(1, 1, 1), 0.35)
-    end
-
-    toggleButton.BackgroundColor3 = preset.Accent
-    toggleGradient.Color = ColorSequence.new(preset.Accent, preset.HeaderB)
-
-    local wheelieStroke = wheelieButton:FindFirstChildOfClass("UIStroke")
-    if wheelieStroke then
-        wheelieStroke.Color = preset.Accent
-    end
-
-    local dashboardStroke = dashboardWelcome:FindFirstChildOfClass("UIStroke")
-    if dashboardStroke then
-        dashboardStroke.Color = preset.Accent:Lerp(COLORS.Border, 0.5)
-    end
-
-    for name, button in pairs(themeButtons) do
-        local stroke = button:FindFirstChildOfClass("UIStroke")
-        local selected = name == currentThemeName
-        if stroke then
-            stroke.Thickness = selected and 2.5 or 1
-            stroke.Transparency = selected and 0 or 0.35
-        end
-    end
-
-    showPage(activePageName)
-end
-
-local function updateScale()
-    scaleValueLabel.Text = tostring(math.floor(panelScale.Scale * 100 + 0.5)) .. "%"
-end
-
-scaleDownButton.Activated:Connect(function()
-    panelScale.Scale = math.clamp(panelScale.Scale - 0.05, 0.8, 1.15)
-    updateScale()
-end)
-scaleUpButton.Activated:Connect(function()
-    panelScale.Scale = math.clamp(panelScale.Scale + 0.05, 0.8, 1.15)
-    updateScale()
-end)
-
-local function applyPanelTransparency()
-    panelTransparencyLevel = panelTransparencyValues[currentTransparencyIndex]
-    panelGradient.Transparency = NumberSequence.new(panelTransparencyLevel)
-    transparencyButton.Text = string.upper(panelTransparencyNames[currentTransparencyIndex])
-end
-
-transparencyButton.Activated:Connect(function()
-    currentTransparencyIndex += 1
-    if currentTransparencyIndex > #panelTransparencyValues then
-        currentTransparencyIndex = 1
-    end
-    applyPanelTransparency()
-end)
-
-for themeName, button in pairs(themeButtons) do
-    button.Activated:Connect(function()
-        applyTheme(themeName)
-        setStatus("UI theme changed to " .. themeName .. ".", COLORS.Purple)
-    end)
-end
-
-resetSettingsButton.Activated:Connect(function()
-    panelScale.Scale = 1
-    updateScale()
-    currentTransparencyIndex = 1
-    applyPanelTransparency()
-    applyTheme("Purple")
-    setStatus("UI settings reset.", COLORS.Green)
-end)
-
-updateScale()
-applyPanelTransparency()
-applyTheme("Purple")
 
 --==================================================
 -- AUTO WHEELIE
@@ -2004,4 +1462,4 @@ end)
 -- INITIAL STATUS
 --==================================================
 
-setStatus("Dashboard ready - choose a feature.", COLORS.Green)
+setStatus("Ready - choose a feature.", COLORS.Green)
