@@ -5,7 +5,7 @@
     Features:
     - Refined, aligned purple GUI
     - Home and scooter customization tabs
-    - Speed Changer (1–1000 KM/H)
+    - Speed Changer slider (1–1000 KM/H)
     - Auto Wheelie
     - Attach to Scooter
     - Money Farm
@@ -197,7 +197,7 @@ panel.Position = UDim2.new(0.5, -195, 0.5, -325)
 panel.BackgroundColor3 = COLORS.Background
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
-panel.Visible = false -- Hidden until the access key is entered
+panel.Visible = true -- Key system removed; show the main panel immediately
 panel.Parent = gui
 
 addCorner(panel, 17)
@@ -551,33 +551,55 @@ local speedTitle = makeLabel(
 speedTitle.Font = Enum.Font.GothamBold
 
 local speedDescription = makeLabel(
-    speedCard, "SpeedChangerDescription", "Scooter speed • 1–1000 KM/H",
+    speedCard, "SpeedChangerDescription", "Scooter speed • 1–1000 KM/H (smooth acceleration)",
     UDim2.new(1, -135, 0, 16), UDim2.fromOffset(15, 29), 9, COLORS.Muted
 )
 
-local speedInput = Instance.new("TextBox")
-speedInput.Name = "SpeedKmhInput"
-speedInput.Size = UDim2.fromOffset(94, 29)
-speedInput.Position = UDim2.fromOffset(15, 59)
-speedInput.BackgroundColor3 = Color3.fromRGB(42, 35, 56)
-speedInput.BorderSizePixel = 0
-speedInput.Text = tostring(speedKmh)
-speedInput.PlaceholderText = "1–1000"
-speedInput.PlaceholderColor3 = COLORS.Muted
-speedInput.TextColor3 = COLORS.Text
-speedInput.TextSize = 12
-speedInput.Font = Enum.Font.GothamBold
-speedInput.ClearTextOnFocus = false
-speedInput.TextXAlignment = Enum.TextXAlignment.Center
-speedInput.Parent = speedCard
-addCorner(speedInput, 8)
-addStroke(speedInput, COLORS.Border, 1, 0.25)
-
-local speedUnit = makeLabel(
-    speedCard, "SpeedUnit", "KM/H",
-    UDim2.fromOffset(44, 29), UDim2.fromOffset(113, 59), 10, COLORS.Muted
+-- Speed value display and draggable slider (1–1000 KM/H)
+local speedValueLabel = makeLabel(
+    speedCard,
+    "SpeedValueLabel",
+    "50 KM/H",
+    UDim2.new(1, -145, 0, 18),
+    UDim2.fromOffset(15, 47),
+    11,
+    Color3.fromRGB(255, 190, 110)
 )
-speedUnit.Font = Enum.Font.GothamBold
+speedValueLabel.Font = Enum.Font.GothamBold
+
+local speedTrack = Instance.new("Frame")
+speedTrack.Name = "SpeedSliderTrack"
+speedTrack.Size = UDim2.new(1, -145, 0, 8)
+speedTrack.Position = UDim2.fromOffset(15, 73)
+speedTrack.BackgroundColor3 = Color3.fromRGB(57, 49, 72)
+speedTrack.BorderSizePixel = 0
+speedTrack.Active = true
+speedTrack.Parent = speedCard
+addCorner(speedTrack, 5)
+
+local speedFill = Instance.new("Frame")
+speedFill.Name = "SpeedSliderFill"
+speedFill.Size = UDim2.new((speedKmh - 1) / 999, 0, 1, 0)
+speedFill.BackgroundColor3 = Color3.fromRGB(255, 170, 70)
+speedFill.BorderSizePixel = 0
+speedFill.Active = true
+speedFill.Parent = speedTrack
+addCorner(speedFill, 5)
+
+local speedKnob = Instance.new("TextButton")
+speedKnob.Name = "SpeedSliderKnob"
+speedKnob.Size = UDim2.fromOffset(16, 16)
+speedKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+speedKnob.Position = UDim2.new((speedKmh - 1) / 999, 0, 0.5, 0)
+speedKnob.BackgroundColor3 = Color3.fromRGB(255, 245, 230)
+speedKnob.BorderSizePixel = 0
+speedKnob.Text = ""
+speedKnob.AutoButtonColor = false
+speedKnob.Active = true
+speedKnob.ZIndex = 3
+speedKnob.Parent = speedTrack
+addCorner(speedKnob, 8)
+addStroke(speedKnob, Color3.fromRGB(255, 170, 70), 2, 0)
 
 local speedButton = Instance.new("TextButton")
 speedButton.Name = "SpeedChangerToggle"
@@ -691,7 +713,7 @@ toggleButton.TextColor3 = Color3.new(1, 1, 1)
 toggleButton.TextSize = 19
 toggleButton.Font = Enum.Font.GothamBlack
 toggleButton.AutoButtonColor = false
-toggleButton.Visible = false -- Hidden until the access key is entered
+toggleButton.Visible = true -- Key system removed; show the floating toggle immediately
 toggleButton.Parent = gui
 
 addCorner(toggleButton, 15)
@@ -790,31 +812,112 @@ local function stopSpeedChanger()
     end
 end
 
-local function parseSpeedInput()
-    local value = tonumber(speedInput.Text)
-    if not value then
-        speedInput.Text = tostring(speedKmh)
-        setStatus("Enter a number from 1 to 1000 KM/H.", COLORS.Red)
-        return false
-    end
-
-    value = math.floor(value + 0.5)
-    value = math.clamp(value, 1, 1000)
-    speedKmh = value
-    speedInput.Text = tostring(speedKmh)
-    return true
+local function updateSpeedSliderVisuals()
+    local ratio = (speedKmh - 1) / 999
+    speedValueLabel.Text = tostring(speedKmh) .. " KM/H"
+    speedFill.Size = UDim2.new(ratio, 0, 1, 0)
+    speedKnob.Position = UDim2.new(ratio, 0, 0.5, 0)
 end
 
-speedInput.FocusLost:Connect(function()
-    parseSpeedInput()
-    if speedEnabled then
-        setStatus("Speed Changer: " .. speedKmh .. " KM/H", COLORS.Green)
+local function updateSpeedFromScreenX(screenX)
+    local trackStart = speedTrack.AbsolutePosition.X
+    local trackWidth = math.max(speedTrack.AbsoluteSize.X, 1)
+    local ratio = math.clamp((screenX - trackStart) / trackWidth, 0, 1)
+    speedKmh = math.clamp(math.floor(1 + ratio * 999 + 0.5), 1, 1000)
+    updateSpeedSliderVisuals()
+end
+
+local speedDragging = false
+
+local function beginSpeedSliderDrag(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+
+    speedDragging = true
+    updateSpeedFromScreenX(input.Position.X)
+end
+
+speedTrack.InputBegan:Connect(beginSpeedSliderDrag)
+speedFill.InputBegan:Connect(beginSpeedSliderDrag)
+speedKnob.InputBegan:Connect(beginSpeedSliderDrag)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not speedDragging then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        updateSpeedFromScreenX(input.Position.X)
     end
 end)
 
+UserInputService.InputEnded:Connect(function(input)
+    if not speedDragging then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        speedDragging = false
+        setStatus(
+            "Selected speed: " .. speedKmh .. " KM/H",
+            speedEnabled and COLORS.Green or COLORS.Muted
+        )
+    end
+end)
+
+updateSpeedSliderVisuals()
+
+-- Find every movable physical assembly inside the scooter. Some scooter models
+-- have an unconnected seat, deck, or body, so controlling only PrimaryPart can
+-- move just one piece. We use scooter descendants, never HumanoidRootPart directly.
+local function getScooterDriveParts(vehicle, seat)
+    local driveParts = {}
+    local seenAssemblies = {}
+
+    local function addPart(part)
+        if not part or not part:IsA("BasePart") or part.Anchored then
+            return
+        end
+
+        local assemblyRoot = part.AssemblyRootPart or part
+        if seenAssemblies[assemblyRoot] then
+            return
+        end
+
+        seenAssemblies[assemblyRoot] = true
+        table.insert(driveParts, part)
+    end
+
+    if vehicle and vehicle:IsA("Model") then
+        -- Include the primary part first, but do not assume it is the only
+        -- movable assembly in the scooter.
+        addPart(vehicle.PrimaryPart)
+        for _, descendant in ipairs(vehicle:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                addPart(descendant)
+            end
+        end
+    elseif vehicle and vehicle:IsA("BasePart") then
+        addPart(vehicle)
+    end
+
+    -- Last resort for vehicles represented by a seat/basepart only.
+    if #driveParts == 0 and seat and seat:IsA("BasePart") then
+        addPart(seat)
+    end
+
+    return driveParts
+end
+
+local SPEED_ACCELERATION = 120 -- studs/s^2; ramps up instead of instantly flinging the rider
+
 local function startSpeedChanger()
     stopSpeedChanger()
-    speedConnection = RunService.Heartbeat:Connect(function()
+    speedConnection = RunService.Heartbeat:Connect(function(dt)
         if guiDestroyed or not speedEnabled then
             stopSpeedChanger()
             return
@@ -825,39 +928,55 @@ local function startSpeedChanger()
             return
         end
 
-        local root
-        if vehicle:IsA("Model") then
-            root = vehicle.PrimaryPart or seat
-        elseif vehicle:IsA("BasePart") then
-            root = vehicle
-        end
-
-        if not root or not root.Parent or root.Anchored then
+        local driveParts = getScooterDriveParts(vehicle, seat)
+        if #driveParts == 0 then
             return
         end
 
-        -- Roblox vehicle speed is approximated in studs/second (about 1 KM/H per stud/second).
-        local velocity = root.AssemblyLinearVelocity
-        local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
-        local direction
-
-        if horizontal.Magnitude > 1 then
-            direction = horizontal.Unit
-        else
-            local look = seat.CFrame.LookVector
-            direction = Vector3.new(look.X, 0, look.Z)
-            if direction.Magnitude < 0.01 then
-                return
-            end
-            direction = direction.Unit
+        local look = seat.CFrame.LookVector
+        local forward = Vector3.new(look.X, 0, look.Z)
+        if forward.Magnitude < 0.01 then
+            local rootLook = driveParts[1].CFrame.LookVector
+            forward = Vector3.new(rootLook.X, 0, rootLook.Z)
         end
+        if forward.Magnitude < 0.01 then
+            return
+        end
+        forward = forward.Unit
 
-        local targetStudsPerSecond = speedKmh / 1.008
-        root.AssemblyLinearVelocity = Vector3.new(
-            direction.X * targetStudsPerSecond,
-            velocity.Y,
-            direction.Z * targetStudsPerSecond
-        )
+        local targetSpeed = speedKmh / 1.008 -- approx. KM/H -> Roblox studs/second
+        local maxStep = SPEED_ACCELERATION * math.max(dt, 0)
+
+        -- Smoothly accelerate the scooter's physical assemblies. This avoids the
+        -- old instant velocity assignment that could fling the rider out of place.
+        -- Vertical velocity is preserved for ramps and jumps.
+        for _, drivePart in ipairs(driveParts) do
+            if drivePart and drivePart.Parent and not drivePart.Anchored then
+                local velocity = drivePart.AssemblyLinearVelocity
+                local currentHorizontal = Vector3.new(velocity.X, 0, velocity.Z)
+
+                local direction = forward
+                if currentHorizontal.Magnitude > 3 then
+                    local currentDirection = currentHorizontal.Unit
+                    if currentDirection:Dot(forward) > 0.25 then
+                        direction = currentDirection
+                    end
+                end
+
+                local targetHorizontal = direction * targetSpeed
+                local difference = targetHorizontal - currentHorizontal
+                if difference.Magnitude > maxStep and difference.Magnitude > 0 then
+                    difference = difference.Unit * maxStep
+                end
+
+                local nextHorizontal = currentHorizontal + difference
+                drivePart.AssemblyLinearVelocity = Vector3.new(
+                    nextHorizontal.X,
+                    velocity.Y,
+                    nextHorizontal.Z
+                )
+            end
+        end
     end)
 end
 
@@ -873,9 +992,6 @@ speedButton.Activated:Connect(function()
         speedButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
         setStatus("Speed Changer disabled.", COLORS.Muted)
     else
-        if not parseSpeedInput() then
-            return
-        end
         speedEnabled = true
         speedButton.Text = "ON"
         speedButton.BackgroundColor3 = Color3.fromRGB(255, 170, 70):Lerp(COLORS.Background, 0.35)
