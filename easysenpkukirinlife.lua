@@ -5,6 +5,7 @@
     Features:
     - Refined, aligned purple GUI
     - Home and scooter customization tabs
+    - Speed Changer (1–1000 KM/H)
     - Auto Wheelie
     - Attach to Scooter
     - Money Farm
@@ -191,12 +192,12 @@ gui.Parent = playerGui
 
 local panel = Instance.new("Frame")
 panel.Name = "MainPanel"
-panel.Size = UDim2.fromOffset(390, 570)
-panel.Position = UDim2.new(0.5, -195, 0.5, -285)
+panel.Size = UDim2.fromOffset(390, 650)
+panel.Position = UDim2.new(0.5, -195, 0.5, -325)
 panel.BackgroundColor3 = COLORS.Background
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
-panel.Visible = true
+panel.Visible = false -- Hidden until the access key is entered
 panel.Parent = gui
 
 addCorner(panel, 17)
@@ -517,13 +518,91 @@ local farmButton = createFeature(
 )
 
 --==================================================
+-- SPEED CHANGER UI (HOME)
+--==================================================
+
+local speedEnabled = false
+local speedKmh = 50
+local speedConnection
+
+local speedCard = Instance.new("Frame")
+speedCard.Name = "SpeedChangerCard"
+speedCard.Size = UDim2.new(1, -8, 0, 100)
+speedCard.Position = UDim2.fromOffset(4, 253)
+speedCard.BackgroundColor3 = COLORS.Panel
+speedCard.BorderSizePixel = 0
+speedCard.Parent = homePage
+addCorner(speedCard, 11)
+addStroke(speedCard, COLORS.Border, 1, 0.4)
+addGradient(speedCard, Color3.fromRGB(38, 32, 52), Color3.fromRGB(25, 22, 35), 90)
+
+local speedAccent = Instance.new("Frame")
+speedAccent.Size = UDim2.new(0, 4, 0, 72)
+speedAccent.Position = UDim2.new(0, 0, 0.5, -36)
+speedAccent.BackgroundColor3 = Color3.fromRGB(255, 170, 70)
+speedAccent.BorderSizePixel = 0
+speedAccent.Parent = speedCard
+addCorner(speedAccent, 3)
+
+local speedTitle = makeLabel(
+    speedCard, "SpeedChangerTitle", "SPEED CHANGER",
+    UDim2.new(1, -135, 0, 23), UDim2.fromOffset(15, 7), 12, COLORS.Text
+)
+speedTitle.Font = Enum.Font.GothamBold
+
+local speedDescription = makeLabel(
+    speedCard, "SpeedChangerDescription", "Scooter speed • 1–1000 KM/H",
+    UDim2.new(1, -135, 0, 16), UDim2.fromOffset(15, 29), 9, COLORS.Muted
+)
+
+local speedInput = Instance.new("TextBox")
+speedInput.Name = "SpeedKmhInput"
+speedInput.Size = UDim2.fromOffset(94, 29)
+speedInput.Position = UDim2.fromOffset(15, 59)
+speedInput.BackgroundColor3 = Color3.fromRGB(42, 35, 56)
+speedInput.BorderSizePixel = 0
+speedInput.Text = tostring(speedKmh)
+speedInput.PlaceholderText = "1–1000"
+speedInput.PlaceholderColor3 = COLORS.Muted
+speedInput.TextColor3 = COLORS.Text
+speedInput.TextSize = 12
+speedInput.Font = Enum.Font.GothamBold
+speedInput.ClearTextOnFocus = false
+speedInput.TextXAlignment = Enum.TextXAlignment.Center
+speedInput.Parent = speedCard
+addCorner(speedInput, 8)
+addStroke(speedInput, COLORS.Border, 1, 0.25)
+
+local speedUnit = makeLabel(
+    speedCard, "SpeedUnit", "KM/H",
+    UDim2.fromOffset(44, 29), UDim2.fromOffset(113, 59), 10, COLORS.Muted
+)
+speedUnit.Font = Enum.Font.GothamBold
+
+local speedButton = Instance.new("TextButton")
+speedButton.Name = "SpeedChangerToggle"
+speedButton.Size = UDim2.fromOffset(96, 36)
+speedButton.Position = UDim2.new(1, -106, 0.5, -18)
+speedButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+speedButton.BorderSizePixel = 0
+speedButton.Text = "OFF"
+speedButton.TextColor3 = COLORS.Text
+speedButton.TextSize = 11
+speedButton.Font = Enum.Font.GothamBold
+speedButton.AutoButtonColor = false
+speedButton.Parent = speedCard
+addCorner(speedButton, 8)
+addStroke(speedButton, speedAccent.BackgroundColor3, 1, 0.25)
+
+
+--==================================================
 -- PANIC BUTTON
 --==================================================
 
 local panicButton = Instance.new("TextButton")
 panicButton.Name = "PanicButton"
 panicButton.Size = UDim2.new(1, -8, 0, 45)
-panicButton.Position = UDim2.fromOffset(4, 254)
+panicButton.Position = UDim2.fromOffset(4, 363)
 panicButton.BackgroundColor3 = Color3.fromRGB(69, 28, 42)
 panicButton.BorderSizePixel = 0
 panicButton.Text = "⚠   PANIC BUTTON     •     STOP ALL"
@@ -544,7 +623,7 @@ addGradient(panicButton, Color3.fromRGB(91, 33, 49), Color3.fromRGB(56, 24, 37),
 local statusCard = Instance.new("Frame")
 statusCard.Name = "StatusCard"
 statusCard.Size = UDim2.new(1, -8, 0, 50)
-statusCard.Position = UDim2.fromOffset(4, 309)
+statusCard.Position = UDim2.fromOffset(4, 418)
 statusCard.BackgroundColor3 = Color3.fromRGB(23, 22, 32)
 statusCard.BorderSizePixel = 0
 statusCard.Parent = homePage
@@ -612,7 +691,7 @@ toggleButton.TextColor3 = Color3.new(1, 1, 1)
 toggleButton.TextSize = 19
 toggleButton.Font = Enum.Font.GothamBlack
 toggleButton.AutoButtonColor = false
-toggleButton.Visible = true
+toggleButton.Visible = false -- Hidden until the access key is entered
 toggleButton.Parent = gui
 
 addCorner(toggleButton, 15)
@@ -699,6 +778,111 @@ local function setPivot(vehicle, cf)
         vehicle.CFrame = cf
     end
 end
+
+--==================================================
+-- SPEED CHANGER LOGIC
+--==================================================
+
+local function stopSpeedChanger()
+    if speedConnection then
+        speedConnection:Disconnect()
+        speedConnection = nil
+    end
+end
+
+local function parseSpeedInput()
+    local value = tonumber(speedInput.Text)
+    if not value then
+        speedInput.Text = tostring(speedKmh)
+        setStatus("Enter a number from 1 to 1000 KM/H.", COLORS.Red)
+        return false
+    end
+
+    value = math.floor(value + 0.5)
+    value = math.clamp(value, 1, 1000)
+    speedKmh = value
+    speedInput.Text = tostring(speedKmh)
+    return true
+end
+
+speedInput.FocusLost:Connect(function()
+    parseSpeedInput()
+    if speedEnabled then
+        setStatus("Speed Changer: " .. speedKmh .. " KM/H", COLORS.Green)
+    end
+end)
+
+local function startSpeedChanger()
+    stopSpeedChanger()
+    speedConnection = RunService.Heartbeat:Connect(function()
+        if guiDestroyed or not speedEnabled then
+            stopSpeedChanger()
+            return
+        end
+
+        local vehicle, seat = getVehicle()
+        if not vehicle or not seat then
+            return
+        end
+
+        local root
+        if vehicle:IsA("Model") then
+            root = vehicle.PrimaryPart or seat
+        elseif vehicle:IsA("BasePart") then
+            root = vehicle
+        end
+
+        if not root or not root.Parent or root.Anchored then
+            return
+        end
+
+        -- Roblox vehicle speed is approximated in studs/second (about 1 KM/H per stud/second).
+        local velocity = root.AssemblyLinearVelocity
+        local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
+        local direction
+
+        if horizontal.Magnitude > 1 then
+            direction = horizontal.Unit
+        else
+            local look = seat.CFrame.LookVector
+            direction = Vector3.new(look.X, 0, look.Z)
+            if direction.Magnitude < 0.01 then
+                return
+            end
+            direction = direction.Unit
+        end
+
+        local targetStudsPerSecond = speedKmh / 1.008
+        root.AssemblyLinearVelocity = Vector3.new(
+            direction.X * targetStudsPerSecond,
+            velocity.Y,
+            direction.Z * targetStudsPerSecond
+        )
+    end)
+end
+
+speedButton.Activated:Connect(function()
+    if guiDestroyed then
+        return
+    end
+
+    if speedEnabled then
+        speedEnabled = false
+        stopSpeedChanger()
+        speedButton.Text = "OFF"
+        speedButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+        setStatus("Speed Changer disabled.", COLORS.Muted)
+    else
+        if not parseSpeedInput() then
+            return
+        end
+        speedEnabled = true
+        speedButton.Text = "ON"
+        speedButton.BackgroundColor3 = Color3.fromRGB(255, 170, 70):Lerp(COLORS.Background, 0.35)
+        startSpeedChanger()
+        setStatus("Speed Changer enabled: " .. speedKmh .. " KM/H", COLORS.Green)
+    end
+end)
 
 --==================================================
 -- SCOOTER COLOR CUSTOMIZATION
@@ -1449,11 +1633,13 @@ panicButton.Activated:Connect(function()
     runningFarm = false
     autoWheelie = false
     attachEnabled = false
+    speedEnabled = false
 
     farmToken += 1
 
     stopWheelie()
     stopAttach()
+    stopSpeedChanger()
 
     gui:Destroy()
 end)
