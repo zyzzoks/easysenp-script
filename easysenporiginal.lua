@@ -22,6 +22,12 @@ local GAMES = {
         placeId = 122840796290491,
         scriptUrl = "https://raw.githubusercontent.com/zyzzoks/easysenp-script/refs/heads/main/easysenpkukirinlife.lua",
     },
+    {
+        name = "Rivals",
+        description = "Rivals",
+        placeId = 17625359962,
+        scriptUrl = "https://raw.githubusercontent.com/zyzzoks/easysenp-script/refs/heads/main/easysenprivals.lua",
+    },
 }
 
 local COLORS = {
