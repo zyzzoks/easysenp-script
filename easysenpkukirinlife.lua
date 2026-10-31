@@ -3,10 +3,11 @@
     Location: StarterPlayer > StarterPlayerScripts > LocalScript
 
     Features:
-    - Refined, aligned purple GUI
-    - Home and scooter customization tabs
+    - Halloween GUI theme (pumpkin orange, violet and midnight black)
+    - Home, Scooter Colors and Custom Helmets tabs
     - Speed Changer slider (1–1000 KM/H)
-    - Auto Wheelie
+    - Auto Wheelie continuously holds the front end up with a 1-90 degree slider (no AlignOrientation)
+- Rounded red/blue Fullface helmets; hair is hidden while equipped
     - Attach to Scooter
     - Money Farm
     - Panic Button
@@ -27,9 +28,13 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- CONFIGURATION
 --==================================================
 
-local WHEELIE_ANGLE = math.rad(45)
-local WHEELIE_RESPONSE = 5
-local WHEELIE_TORQUE = 25000
+local wheelieAngleDegrees = 45 -- Slider range: 1 to 90 degrees
+-- Stable closed-loop pitch control using AssemblyAngularVelocity only.
+-- No AlignOrientation, Attachment, PivotTo loop, or alignment constraint.
+local WHEELIE_P_GAIN = 13.5
+local WHEELIE_D_GAIN = 3.8
+local WHEELIE_MAX_ANGULAR_SPEED = math.rad(230)
+local WHEELIE_MAX_TARGET_PITCH = math.rad(88.5)
 
 local ATTACH_CHECK_INTERVAL = 0.15
 local ATTACH_DISTANCE = 5
@@ -42,17 +47,18 @@ local SPIN_DURATION = 0.18
 local FARM_GROUND_PAUSE = 1
 
 local COLORS = {
-    Background = Color3.fromRGB(17, 15, 25),
-    Panel = Color3.fromRGB(27, 23, 39),
-    Header = Color3.fromRGB(91, 49, 155),
-    Purple = Color3.fromRGB(157, 91, 255),
-    Blue = Color3.fromRGB(75, 145, 255),
-    Green = Color3.fromRGB(52, 210, 132),
-    Red = Color3.fromRGB(255, 76, 96),
-    Text = Color3.fromRGB(248, 245, 255),
-    Muted = Color3.fromRGB(166, 156, 185),
-    Button = Color3.fromRGB(40, 34, 54),
-    Border = Color3.fromRGB(75, 61, 99),
+    -- Halloween palette: midnight black, pumpkin orange, violet and ghost-lime.
+    Background = Color3.fromRGB(14, 10, 15),
+    Panel = Color3.fromRGB(30, 18, 27),
+    Header = Color3.fromRGB(116, 43, 14),
+    Purple = Color3.fromRGB(255, 119, 26),
+    Blue = Color3.fromRGB(151, 81, 226),
+    Green = Color3.fromRGB(169, 211, 76),
+    Red = Color3.fromRGB(235, 72, 42),
+    Text = Color3.fromRGB(255, 244, 225),
+    Muted = Color3.fromRGB(188, 166, 173),
+    Button = Color3.fromRGB(48, 29, 38),
+    Border = Color3.fromRGB(111, 66, 77),
 }
 
 --==================================================
@@ -67,9 +73,10 @@ local guiDestroyed = false
 local farmToken = 0
 
 local wheelieConnection
-local wheelieAttachment
-local wheelieAlign
 local wheelieRoot
+local wheelieVehicle
+local wheelieSeat
+local wheelieBasePitch
 
 local attachConnection
 local lastVehicle
@@ -192,8 +199,8 @@ gui.Parent = playerGui
 
 local panel = Instance.new("Frame")
 panel.Name = "MainPanel"
-panel.Size = UDim2.fromOffset(390, 650)
-panel.Position = UDim2.new(0.5, -195, 0.5, -325)
+panel.Size = UDim2.fromOffset(390, 670)
+panel.Position = UDim2.new(0.5, -195, 0.5, -335)
 panel.BackgroundColor3 = COLORS.Background
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
@@ -204,8 +211,8 @@ addCorner(panel, 17)
 addStroke(panel, COLORS.Purple, 1.5, 0.12)
 addGradient(
     panel,
-    Color3.fromRGB(31, 24, 46),
-    Color3.fromRGB(15, 14, 22),
+    Color3.fromRGB(51, 24, 28),
+    Color3.fromRGB(16, 10, 15),
     90
 )
 
@@ -223,8 +230,8 @@ header.Parent = panel
 addCorner(header, 17)
 addGradient(
     header,
-    Color3.fromRGB(119, 66, 197),
-    Color3.fromRGB(62, 39, 104),
+    Color3.fromRGB(194, 79, 19),
+    Color3.fromRGB(94, 36, 73),
     0
 )
 
@@ -237,7 +244,7 @@ logo.BorderSizePixel = 0
 logo.Parent = header
 
 addCorner(logo, 12)
-addStroke(logo, Color3.fromRGB(220, 197, 255), 1, 0.4)
+addStroke(logo, Color3.fromRGB(255, 201, 151), 1, 0.4)
 
 local logoText = makeLabel(
     logo,
@@ -265,11 +272,11 @@ title.Font = Enum.Font.GothamBold
 local subtitle = makeLabel(
     header,
     "Subtitle",
-    "SCOOTER CONTROL CENTER",
+    "🎃 HALLOWEEN SCOOTER CONTROL 🎃",
     UDim2.new(1, -85, 0, 20),
     UDim2.fromOffset(72, 43),
     9,
-    Color3.fromRGB(222, 202, 255)
+    Color3.fromRGB(255, 210, 170)
 )
 subtitle.Font = Enum.Font.GothamMedium
 
@@ -320,7 +327,7 @@ customizationPage.Size = UDim2.new(1, -24, 1, -144)
 customizationPage.BackgroundTransparency = 1
 customizationPage.BorderSizePixel = 0
 customizationPage.ScrollBarThickness = 3
-customizationPage.CanvasSize = UDim2.new(0, 0, 0, 326)
+customizationPage.CanvasSize = UDim2.new(0, 0, 0, 390)
 customizationPage.Visible = false
 customizationPage.Parent = panel
 
@@ -413,10 +420,10 @@ sectionLabel.Font = Enum.Font.GothamBold
 -- FEATURE BUTTONS
 --==================================================
 
-local function createFeature(name, titleText, description, y, accent)
+local function createFeature(name, titleText, description, y, accent, cardHeight)
     local card = Instance.new("Frame")
     card.Name = name .. "Card"
-    card.Size = UDim2.new(1, -8, 0, 67)
+    card.Size = UDim2.new(1, -8, 0, cardHeight or 67)
     card.Position = UDim2.fromOffset(4, y)
     card.BackgroundColor3 = COLORS.Panel
     card.BorderSizePixel = 0
@@ -424,7 +431,7 @@ local function createFeature(name, titleText, description, y, accent)
 
     addCorner(card, 11)
     addStroke(card, COLORS.Border, 1, 0.4)
-    addGradient(card, Color3.fromRGB(38, 32, 52), Color3.fromRGB(25, 22, 35), 90)
+    addGradient(card, Color3.fromRGB(48, 29, 34), Color3.fromRGB(23, 13, 18), 90)
 
     local accentBar = Instance.new("Frame")
     accentBar.Size = UDim2.new(0, 4, 0, 41)
@@ -462,7 +469,7 @@ local function createFeature(name, titleText, description, y, accent)
     action.Name = "Action"
     action.Size = UDim2.fromOffset(96, 34)
     action.Position = UDim2.new(1, -106, 0.5, -17)
-    action.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+    action.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
     action.BorderSizePixel = 0
     action.Text = "OFF"
     action.TextColor3 = COLORS.Text
@@ -477,7 +484,7 @@ local function createFeature(name, titleText, description, y, accent)
     action.MouseEnter:Connect(function()
         if not guiDestroyed then
             TweenService:Create(action, TweenInfo.new(0.12), {
-                BackgroundColor3 = Color3.fromRGB(65, 54, 86)
+                BackgroundColor3 = Color3.fromRGB(91, 47, 35)
             }):Play()
         end
     end)
@@ -485,27 +492,28 @@ local function createFeature(name, titleText, description, y, accent)
         if not guiDestroyed then
             local active = action.Text == "ON" or action.Text == "STOP"
             TweenService:Create(action, TweenInfo.new(0.12), {
-                BackgroundColor3 = active and accent:Lerp(COLORS.Background, 0.35) or Color3.fromRGB(48, 40, 64)
+                BackgroundColor3 = active and accent:Lerp(COLORS.Background, 0.35) or Color3.fromRGB(58, 31, 26)
             }):Play()
         end
     end)
 
-    return action
+    return action, card
 end
 
-local wheelieButton = createFeature(
+local wheelieButton, wheelieCard = createFeature(
     "AutoWheelie",
     "AUTO WHEELIE",
-    "Automatic wheelie control",
+    "Lift the front wheel while seated",
     31,
-    COLORS.Purple
+    COLORS.Purple,
+    112
 )
 
 local attachButton = createFeature(
     "Attach",
     "ATTACH TO SCOOTER",
     "Reconnect after falling off",
-    105,
+    151,
     COLORS.Blue
 )
 
@@ -513,9 +521,110 @@ local farmButton = createFeature(
     "MoneyFarm",
     "MONEY FARM",
     "Tricks, landing and repeat",
-    179,
+    225,
     COLORS.Green
 )
+
+--==================================================
+-- AUTO WHEELIE ANGLE SLIDER (1-90 DEGREES)
+--==================================================
+
+local wheelieSliderDragging = false
+local wheelieSliderInputChanged
+local wheelieSliderInputEnded
+local setStatus -- Defined below; forward-declared for the slider callback.
+
+local wheelieAngleLabel = makeLabel(
+    wheelieCard,
+    "WheelieAngleLabel",
+    "FRONT WHEEL ANGLE: " .. tostring(wheelieAngleDegrees) .. "°",
+    UDim2.new(1, -132, 0, 16),
+    UDim2.fromOffset(15, 65),
+    9,
+    Color3.fromRGB(255, 183, 105)
+)
+wheelieAngleLabel.Font = Enum.Font.GothamBold
+
+local wheelieAngleTrack = Instance.new("Frame")
+wheelieAngleTrack.Name = "WheelieAngleSliderTrack"
+wheelieAngleTrack.Size = UDim2.new(1, -132, 0, 8)
+wheelieAngleTrack.Position = UDim2.fromOffset(15, 91)
+wheelieAngleTrack.BackgroundColor3 = Color3.fromRGB(66, 39, 42)
+wheelieAngleTrack.BorderSizePixel = 0
+wheelieAngleTrack.Active = true
+wheelieAngleTrack.Parent = wheelieCard
+addCorner(wheelieAngleTrack, 5)
+
+local wheelieAngleFill = Instance.new("Frame")
+wheelieAngleFill.Name = "WheelieAngleSliderFill"
+wheelieAngleFill.Size = UDim2.new((wheelieAngleDegrees - 1) / 89, 0, 1, 0)
+wheelieAngleFill.BackgroundColor3 = Color3.fromRGB(255, 119, 26)
+wheelieAngleFill.BorderSizePixel = 0
+wheelieAngleFill.Active = true
+wheelieAngleFill.Parent = wheelieAngleTrack
+addCorner(wheelieAngleFill, 5)
+
+local wheelieAngleKnob = Instance.new("TextButton")
+wheelieAngleKnob.Name = "WheelieAngleSliderKnob"
+wheelieAngleKnob.Size = UDim2.fromOffset(16, 16)
+wheelieAngleKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+wheelieAngleKnob.Position = UDim2.new((wheelieAngleDegrees - 1) / 89, 0, 0.5, 0)
+wheelieAngleKnob.BackgroundColor3 = Color3.fromRGB(255, 238, 218)
+wheelieAngleKnob.BorderSizePixel = 0
+wheelieAngleKnob.Text = ""
+wheelieAngleKnob.AutoButtonColor = false
+wheelieAngleKnob.Active = true
+wheelieAngleKnob.ZIndex = 3
+wheelieAngleKnob.Parent = wheelieAngleTrack
+addCorner(wheelieAngleKnob, 8)
+addStroke(wheelieAngleKnob, Color3.fromRGB(255, 119, 26), 2, 0)
+
+local function updateWheelieAngleVisuals()
+    local ratio = (wheelieAngleDegrees - 1) / 89
+    wheelieAngleLabel.Text = "FRONT WHEEL ANGLE: " .. tostring(wheelieAngleDegrees) .. "°"
+    wheelieAngleFill.Size = UDim2.new(ratio, 0, 1, 0)
+    wheelieAngleKnob.Position = UDim2.new(ratio, 0, 0.5, 0)
+end
+
+local function updateWheelieAngleFromX(screenX)
+    local trackStart = wheelieAngleTrack.AbsolutePosition.X
+    local trackWidth = math.max(wheelieAngleTrack.AbsoluteSize.X, 1)
+    local ratio = math.clamp((screenX - trackStart) / trackWidth, 0, 1)
+    wheelieAngleDegrees = math.clamp(math.floor(1 + ratio * 89 + 0.5), 1, 90)
+    updateWheelieAngleVisuals()
+end
+
+local function beginWheelieAngleDrag(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+    wheelieSliderDragging = true
+    updateWheelieAngleFromX(input.Position.X)
+end
+
+wheelieAngleTrack.InputBegan:Connect(beginWheelieAngleDrag)
+wheelieAngleFill.InputBegan:Connect(beginWheelieAngleDrag)
+wheelieAngleKnob.InputBegan:Connect(beginWheelieAngleDrag)
+
+wheelieSliderInputChanged = UserInputService.InputChanged:Connect(function(input)
+    if not wheelieSliderDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        updateWheelieAngleFromX(input.Position.X)
+    end
+end)
+
+wheelieSliderInputEnded = UserInputService.InputEnded:Connect(function(input)
+    if not wheelieSliderDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        wheelieSliderDragging = false
+        setStatus("Auto Wheelie angle: " .. tostring(wheelieAngleDegrees) .. "°", COLORS.Purple)
+    end
+end)
+
+updateWheelieAngleVisuals()
 
 --==================================================
 -- SPEED CHANGER UI (HOME)
@@ -528,13 +637,13 @@ local speedConnection
 local speedCard = Instance.new("Frame")
 speedCard.Name = "SpeedChangerCard"
 speedCard.Size = UDim2.new(1, -8, 0, 100)
-speedCard.Position = UDim2.fromOffset(4, 253)
+speedCard.Position = UDim2.fromOffset(4, 299)
 speedCard.BackgroundColor3 = COLORS.Panel
 speedCard.BorderSizePixel = 0
 speedCard.Parent = homePage
 addCorner(speedCard, 11)
 addStroke(speedCard, COLORS.Border, 1, 0.4)
-addGradient(speedCard, Color3.fromRGB(38, 32, 52), Color3.fromRGB(25, 22, 35), 90)
+addGradient(speedCard, Color3.fromRGB(48, 29, 34), Color3.fromRGB(23, 13, 18), 90)
 
 local speedAccent = Instance.new("Frame")
 speedAccent.Size = UDim2.new(0, 4, 0, 72)
@@ -563,7 +672,7 @@ local speedValueLabel = makeLabel(
     UDim2.new(1, -145, 0, 18),
     UDim2.fromOffset(15, 47),
     11,
-    Color3.fromRGB(255, 190, 110)
+    Color3.fromRGB(255, 190, 112)
 )
 speedValueLabel.Font = Enum.Font.GothamBold
 
@@ -571,7 +680,7 @@ local speedTrack = Instance.new("Frame")
 speedTrack.Name = "SpeedSliderTrack"
 speedTrack.Size = UDim2.new(1, -145, 0, 8)
 speedTrack.Position = UDim2.fromOffset(15, 73)
-speedTrack.BackgroundColor3 = Color3.fromRGB(57, 49, 72)
+speedTrack.BackgroundColor3 = Color3.fromRGB(66, 39, 42)
 speedTrack.BorderSizePixel = 0
 speedTrack.Active = true
 speedTrack.Parent = speedCard
@@ -591,7 +700,7 @@ speedKnob.Name = "SpeedSliderKnob"
 speedKnob.Size = UDim2.fromOffset(16, 16)
 speedKnob.AnchorPoint = Vector2.new(0.5, 0.5)
 speedKnob.Position = UDim2.new((speedKmh - 1) / 999, 0, 0.5, 0)
-speedKnob.BackgroundColor3 = Color3.fromRGB(255, 245, 230)
+speedKnob.BackgroundColor3 = Color3.fromRGB(255, 236, 211)
 speedKnob.BorderSizePixel = 0
 speedKnob.Text = ""
 speedKnob.AutoButtonColor = false
@@ -605,7 +714,7 @@ local speedButton = Instance.new("TextButton")
 speedButton.Name = "SpeedChangerToggle"
 speedButton.Size = UDim2.fromOffset(96, 36)
 speedButton.Position = UDim2.new(1, -106, 0.5, -18)
-speedButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+speedButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
 speedButton.BorderSizePixel = 0
 speedButton.Text = "OFF"
 speedButton.TextColor3 = COLORS.Text
@@ -624,11 +733,11 @@ addStroke(speedButton, speedAccent.BackgroundColor3, 1, 0.25)
 local panicButton = Instance.new("TextButton")
 panicButton.Name = "PanicButton"
 panicButton.Size = UDim2.new(1, -8, 0, 45)
-panicButton.Position = UDim2.fromOffset(4, 363)
-panicButton.BackgroundColor3 = Color3.fromRGB(69, 28, 42)
+panicButton.Position = UDim2.fromOffset(4, 409)
+panicButton.BackgroundColor3 = Color3.fromRGB(72, 26, 20)
 panicButton.BorderSizePixel = 0
 panicButton.Text = "⚠   PANIC BUTTON     •     STOP ALL"
-panicButton.TextColor3 = Color3.fromRGB(255, 123, 137)
+panicButton.TextColor3 = Color3.fromRGB(255, 158, 82)
 panicButton.TextSize = 12
 panicButton.Font = Enum.Font.GothamBold
 panicButton.AutoButtonColor = false
@@ -636,7 +745,7 @@ panicButton.Parent = homePage
 
 addCorner(panicButton, 10)
 addStroke(panicButton, COLORS.Red, 1, 0.25)
-addGradient(panicButton, Color3.fromRGB(91, 33, 49), Color3.fromRGB(56, 24, 37), 0)
+addGradient(panicButton, Color3.fromRGB(112, 37, 24), Color3.fromRGB(41, 17, 20), 0)
 
 --==================================================
 -- STATUS CARD
@@ -645,14 +754,14 @@ addGradient(panicButton, Color3.fromRGB(91, 33, 49), Color3.fromRGB(56, 24, 37),
 local statusCard = Instance.new("Frame")
 statusCard.Name = "StatusCard"
 statusCard.Size = UDim2.new(1, -8, 0, 50)
-statusCard.Position = UDim2.fromOffset(4, 418)
-statusCard.BackgroundColor3 = Color3.fromRGB(23, 22, 32)
+statusCard.Position = UDim2.fromOffset(4, 464)
+statusCard.BackgroundColor3 = Color3.fromRGB(24, 14, 18)
 statusCard.BorderSizePixel = 0
 statusCard.Parent = homePage
 
 addCorner(statusCard, 10)
 addStroke(statusCard, COLORS.Border, 1, 0.4)
-addGradient(statusCard, Color3.fromRGB(29, 27, 41), Color3.fromRGB(21, 20, 31), 0)
+addGradient(statusCard, Color3.fromRGB(39, 20, 25), Color3.fromRGB(18, 11, 16), 0)
 
 local statusDot = Instance.new("Frame")
 statusDot.Name = "StatusDot"
@@ -686,7 +795,7 @@ local statusLabel = makeLabel(
 )
 statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-local function setStatus(message, color)
+setStatus = function(message, color)
     if guiDestroyed then
         return
     end
@@ -717,11 +826,11 @@ toggleButton.Visible = true -- Key system removed; show the floating toggle imme
 toggleButton.Parent = gui
 
 addCorner(toggleButton, 15)
-addStroke(toggleButton, Color3.fromRGB(213, 184, 255), 1.5, 0.15)
+addStroke(toggleButton, Color3.fromRGB(255, 185, 125), 1.5, 0.15)
 addGradient(
     toggleButton,
     Color3.fromRGB(157, 91, 255),
-    Color3.fromRGB(79, 45, 139),
+    Color3.fromRGB(123, 44, 20),
     45
 )
 
@@ -989,7 +1098,7 @@ speedButton.Activated:Connect(function()
         speedEnabled = false
         stopSpeedChanger()
         speedButton.Text = "OFF"
-        speedButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+        speedButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
         setStatus("Speed Changer disabled.", COLORS.Muted)
     else
         speedEnabled = true
@@ -1001,8 +1110,73 @@ speedButton.Activated:Connect(function()
 end)
 
 --==================================================
--- SCOOTER COLOR CUSTOMIZATION
+-- SCOOTER COLOR CUSTOMIZATION / CUSTOM HELMETS
 --==================================================
+
+--==================================================
+-- CUSTOMIZATION SUB-TABS
+--==================================================
+
+local customizationSubTabBar = Instance.new("Frame")
+customizationSubTabBar.Name = "CustomizationSubTabBar"
+customizationSubTabBar.Size = UDim2.new(1, -8, 0, 34)
+customizationSubTabBar.Position = UDim2.fromOffset(4, 3)
+customizationSubTabBar.BackgroundTransparency = 1
+customizationSubTabBar.Parent = customizationPage
+
+local scooterColorsSubTab = makeButton(
+    customizationSubTabBar,
+    "ScooterColorsSubTab",
+    "SCOOTER COLORS",
+    UDim2.fromOffset(0, 0),
+    UDim2.new(0.5, -4, 1, 0),
+    COLORS.Purple
+)
+scooterColorsSubTab.TextSize = 10
+
+local customHelmetsSubTab = makeButton(
+    customizationSubTabBar,
+    "CustomHelmetsSubTab",
+    "CUSTOM HELMETS",
+    UDim2.new(0.5, 4, 0, 0),
+    UDim2.new(0.5, -4, 1, 0),
+    COLORS.Button
+)
+customHelmetsSubTab.TextSize = 10
+
+local scooterColorsContent = Instance.new("Frame")
+scooterColorsContent.Name = "ScooterColorsContent"
+scooterColorsContent.Position = UDim2.fromOffset(0, 42)
+scooterColorsContent.Size = UDim2.new(1, 0, 0, 326)
+scooterColorsContent.BackgroundTransparency = 1
+scooterColorsContent.Parent = customizationPage
+
+local customHelmetsContent = Instance.new("Frame")
+customHelmetsContent.Name = "CustomHelmetsContent"
+customHelmetsContent.Position = UDim2.fromOffset(0, 42)
+customHelmetsContent.Size = UDim2.new(1, 0, 0, 300)
+customHelmetsContent.BackgroundTransparency = 1
+customHelmetsContent.Visible = false
+customHelmetsContent.Parent = customizationPage
+
+local function showCustomizationSection(sectionName)
+    local showColors = sectionName == "ScooterColors"
+    scooterColorsContent.Visible = showColors
+    customHelmetsContent.Visible = not showColors
+
+    scooterColorsSubTab.BackgroundColor3 = showColors and COLORS.Purple or COLORS.Button
+    customHelmetsSubTab.BackgroundColor3 = showColors and COLORS.Button or COLORS.Purple
+end
+
+scooterColorsSubTab.Activated:Connect(function()
+    showCustomizationSection("ScooterColors")
+end)
+
+customHelmetsSubTab.Activated:Connect(function()
+    showCustomizationSection("CustomHelmets")
+end)
+
+showCustomizationSection("ScooterColors")
 
 local selectedScooterColor = Color3.fromRGB(157, 91, 255)
 local rainbowEnabled = false
@@ -1065,13 +1239,13 @@ local function paintScooter(color, quiet)
 end
 
 local customizationTitle = makeLabel(
-    customizationPage, "CustomizationTitle", "SCOOTER COLOR",
+    scooterColorsContent, "CustomizationTitle", "SCOOTER COLOR",
     UDim2.new(1, -8, 0, 27), UDim2.fromOffset(4, 3), 15, COLORS.Text
 )
 customizationTitle.Font = Enum.Font.GothamBold
 
 local customizationDescription = makeLabel(
-    customizationPage, "CustomizationDescription",
+    scooterColorsContent, "CustomizationDescription",
     "Choose a color for your scooter body.",
     UDim2.new(1, -8, 0, 20), UDim2.fromOffset(4, 33), 10, COLORS.Muted
 )
@@ -1081,7 +1255,7 @@ palette.Name = "ColorPalette"
 palette.Size = UDim2.new(1, -8, 0, 152)
 palette.Position = UDim2.fromOffset(4, 59)
 palette.BackgroundTransparency = 1
-palette.Parent = customizationPage
+palette.Parent = scooterColorsContent
 
 local paletteLayout = Instance.new("UIGridLayout")
 paletteLayout.CellSize = UDim2.new(0.25, -8, 0, 43)
@@ -1156,7 +1330,7 @@ rainbowButton.TextColor3 = COLORS.Text
 rainbowButton.TextSize = 12
 rainbowButton.Font = Enum.Font.GothamBold
 rainbowButton.AutoButtonColor = false
-rainbowButton.Parent = customizationPage
+rainbowButton.Parent = scooterColorsContent
 addCorner(rainbowButton, 11)
 addStroke(rainbowButton, Color3.fromRGB(255, 255, 255), 1, 0.45)
 
@@ -1168,7 +1342,7 @@ rainbowGradient = addGradient(
 )
 
 local colorHint = makeLabel(
-    customizationPage, "ColorHint",
+    scooterColorsContent, "ColorHint",
     "Rainbow smoothly cycles through every color.",
     UDim2.new(1, -8, 0, 30), UDim2.fromOffset(4, 278), 10, COLORS.Muted
 )
@@ -1225,9 +1399,314 @@ rainbowButton.Activated:Connect(function()
     end
 end)
 
+
 --==================================================
--- AUTO WHEELIE
+-- CUSTOM HELMETS
 --==================================================
+
+local selectedCustomHelmet = nil
+local activeCustomHelmetModel = nil
+local helmetRespawnConnection
+local hiddenHairParts = {}
+local hairAddedConnection
+
+local function restoreHelmetHiddenHair()
+    if hairAddedConnection then
+        hairAddedConnection:Disconnect()
+        hairAddedConnection = nil
+    end
+
+    for part, oldTransparency in pairs(hiddenHairParts) do
+        if part and part.Parent then
+            pcall(function()
+                part.LocalTransparencyModifier = oldTransparency
+            end)
+        end
+    end
+    table.clear(hiddenHairParts)
+end
+
+local function isHairAccessory(accessory)
+    if not accessory or not accessory:IsA("Accessory") then
+        return false
+    end
+
+    local ok, accessoryType = pcall(function()
+        return accessory.AccessoryType
+    end)
+    if ok and accessoryType == Enum.AccessoryType.Hair then
+        return true
+    end
+
+    return string.find(string.lower(accessory.Name), "hair", 1, true) ~= nil
+end
+
+local function hideHairAccessory(accessory)
+    if not isHairAccessory(accessory) then
+        return
+    end
+
+    for _, descendant in ipairs(accessory:GetDescendants()) do
+        if descendant:IsA("BasePart") then
+            if hiddenHairParts[descendant] == nil then
+                hiddenHairParts[descendant] = descendant.LocalTransparencyModifier
+            end
+            descendant.LocalTransparencyModifier = 1
+        end
+    end
+end
+
+local function hideCharacterHair(character)
+    restoreHelmetHiddenHair()
+
+    for _, child in ipairs(character:GetChildren()) do
+        hideHairAccessory(child)
+    end
+
+    -- Also hide hair accessories that finish loading after the helmet is equipped.
+    hairAddedConnection = character.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("Accessory") then
+            task.defer(function()
+                if descendant.Parent and isHairAccessory(descendant) then
+                    hideHairAccessory(descendant)
+                end
+            end)
+        elseif descendant:IsA("BasePart") then
+            local accessory = descendant:FindFirstAncestorWhichIsA("Accessory")
+            if accessory and isHairAccessory(accessory) then
+                if hiddenHairParts[descendant] == nil then
+                    hiddenHairParts[descendant] = descendant.LocalTransparencyModifier
+                end
+                descendant.LocalTransparencyModifier = 1
+            end
+        end
+    end)
+end
+
+local function removeCustomHelmet()
+    if activeCustomHelmetModel then
+        pcall(function()
+            activeCustomHelmetModel:Destroy()
+        end)
+        activeCustomHelmetModel = nil
+    end
+    restoreHelmetHiddenHair()
+end
+
+local function addHelmetPart(model, head, name, size, offset, color, shape, transparency, material)
+    local part = Instance.new("Part")
+    part.Name = name
+    part.Size = size
+    part.Shape = shape or Enum.PartType.Block
+    part.Color = color
+    part.Material = material or Enum.Material.SmoothPlastic
+    part.Transparency = transparency or 0
+    part.Anchored = false
+    part.CanCollide = false
+    part.CanTouch = false
+    part.CanQuery = false
+    part.Massless = true
+    part.CastShadow = false
+    part.TopSurface = Enum.SurfaceType.Smooth
+    part.BottomSurface = Enum.SurfaceType.Smooth
+    part.CFrame = head.CFrame * CFrame.new(offset)
+    part.Parent = model
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Name = name .. "Weld"
+    weld.Part0 = head
+    weld.Part1 = part
+    weld.Parent = part
+
+    return part
+end
+
+local function equipCustomFullface(colorName)
+    local character = player.Character
+    local head = character and character:FindFirstChild("Head")
+
+    if not character or not head or not head:IsA("BasePart") then
+        setStatus("Character head not found.", COLORS.Red)
+        return false
+    end
+
+    local shellColor
+    local chinColor
+    if colorName == "Red" then
+        shellColor = Color3.fromRGB(190, 35, 48)
+        chinColor = Color3.fromRGB(125, 22, 32)
+    elseif colorName == "Blue" then
+        shellColor = Color3.fromRGB(35, 105, 220)
+        chinColor = Color3.fromRGB(23, 65, 145)
+    else
+        return false
+    end
+
+    removeCustomHelmet()
+    hideCharacterHair(character)
+
+    local helmetModel = Instance.new("Model")
+    helmetModel.Name = "EasySenpCustomHelmet"
+    helmetModel.Parent = character
+
+    -- Scale a rounded full-face shell to the avatar's actual head dimensions.
+    local headSize = head.Size
+    local shellWidth = math.max(headSize.X * 1.08, 1.42)
+    local shellHeight = math.max(headSize.Y * 1.48, 1.34)
+    local shellDepth = math.max(headSize.Z * 1.58, 1.38)
+
+    -- Rounded outer dome. The oversized spherical shell fully covers the hairline.
+    addHelmetPart(
+        helmetModel, head, "HelmetShell",
+        Vector3.new(shellWidth, shellHeight, shellDepth),
+        Vector3.new(0, 0.10, 0.025),
+        shellColor, Enum.PartType.Ball
+    )
+
+    -- Rounded lower chin section gives the helmet a full-face silhouette.
+    addHelmetPart(
+        helmetModel, head, "FullFaceChinGuard",
+        Vector3.new(shellWidth * 0.66, shellHeight * 0.47, shellDepth * 0.52),
+        Vector3.new(0, -0.27, -shellDepth * 0.30),
+        chinColor, Enum.PartType.Ball
+    )
+
+    -- Curved dark visor across the front of the helmet.
+    addHelmetPart(
+        helmetModel, head, "DarkVisor",
+        Vector3.new(shellWidth * 0.73, shellHeight * 0.30, 0.13),
+        Vector3.new(0, 0.13, -shellDepth * 0.485),
+        Color3.fromRGB(20, 23, 31), Enum.PartType.Ball, 0.14, Enum.Material.Glass
+    )
+
+    -- Rounded side pieces and a small front vent complete the full-face shape.
+    addHelmetPart(
+        helmetModel, head, "LeftSidePlate",
+        Vector3.new(shellWidth * 0.22, shellHeight * 0.47, shellDepth * 0.52),
+        Vector3.new(-shellWidth * 0.36, -0.04, -0.04),
+        chinColor, Enum.PartType.Ball
+    )
+
+    addHelmetPart(
+        helmetModel, head, "RightSidePlate",
+        Vector3.new(shellWidth * 0.22, shellHeight * 0.47, shellDepth * 0.52),
+        Vector3.new(shellWidth * 0.36, -0.04, -0.04),
+        chinColor, Enum.PartType.Ball
+    )
+
+    addHelmetPart(
+        helmetModel, head, "FrontVent",
+        Vector3.new(shellWidth * 0.20, 0.09, 0.055),
+        Vector3.new(0, -0.34, -shellDepth * 0.53),
+        Color3.fromRGB(30, 30, 35), Enum.PartType.Ball
+    )
+
+    activeCustomHelmetModel = helmetModel
+    selectedCustomHelmet = colorName
+    setStatus(colorName .. " rounded Fullface helmet equipped. Hair hidden.", COLORS.Green)
+    return true
+end
+
+local helmetTitle = makeLabel(
+    customHelmetsContent,
+    "CustomHelmetsTitle",
+    "CUSTOM HELMETS",
+    UDim2.new(1, -8, 0, 27),
+    UDim2.fromOffset(4, 3),
+    15,
+    COLORS.Text
+)
+helmetTitle.Font = Enum.Font.GothamBold
+
+local helmetDescription = makeLabel(
+    customHelmetsContent,
+    "CustomHelmetsDescription",
+    "Choose a rounded full-face helmet. Hair is hidden while equipped.",
+    UDim2.new(1, -8, 0, 34),
+    UDim2.fromOffset(4, 32),
+    10,
+    COLORS.Muted
+)
+helmetDescription.TextWrapped = true
+
+local redHelmetButton = makeButton(
+    customHelmetsContent,
+    "RedFullfaceHelmet",
+    "RED  •  FULLFACE",
+    UDim2.fromOffset(4, 77),
+    UDim2.new(1, -8, 0, 58),
+    Color3.fromRGB(150, 34, 46)
+)
+redHelmetButton.TextSize = 13
+
+local blueHelmetButton = makeButton(
+    customHelmetsContent,
+    "BlueFullfaceHelmet",
+    "BLUE  •  FULLFACE",
+    UDim2.fromOffset(4, 146),
+    UDim2.new(1, -8, 0, 58),
+    Color3.fromRGB(35, 87, 170)
+)
+blueHelmetButton.TextSize = 13
+
+local removeHelmetButton = makeButton(
+    customHelmetsContent,
+    "RemoveCustomHelmet",
+    "REMOVE HELMET",
+    UDim2.fromOffset(4, 215),
+    UDim2.new(1, -8, 0, 42),
+    COLORS.Button
+)
+removeHelmetButton.TextSize = 11
+
+redHelmetButton.Activated:Connect(function()
+    equipCustomFullface("Red")
+end)
+
+blueHelmetButton.Activated:Connect(function()
+    equipCustomFullface("Blue")
+end)
+
+removeHelmetButton.Activated:Connect(function()
+    selectedCustomHelmet = nil
+    removeCustomHelmet()
+    setStatus("Custom helmet removed. Hair restored.", COLORS.Muted)
+end)
+
+helmetRespawnConnection = player.CharacterAdded:Connect(function(character)
+    local helmetToRestore = selectedCustomHelmet
+    if not helmetToRestore then
+        restoreHelmetHiddenHair()
+        return
+    end
+
+    task.spawn(function()
+        local head = character:WaitForChild("Head", 8)
+        if head and not guiDestroyed and selectedCustomHelmet == helmetToRestore then
+            equipCustomFullface(helmetToRestore)
+        end
+    end)
+end)
+
+--==================================================
+-- AUTO WHEELIE - SUSTAINED FRONT-WHEEL LIFT (NO ALIGNORIENTATION)
+--==================================================
+
+-- The pitch controller keeps applying a correction while Auto Wheelie is ON.
+-- This holds the scooter at the selected angle, so the front wheel stays up
+-- instead of receiving only one short rotation impulse.
+-- It uses the vehicle assembly's angular velocity; it creates no AlignOrientation,
+-- Attachment, AlignPosition, or other alignment objects.
+
+local function getPitchFromRoot(root)
+    if not root or not root.Parent then
+        return nil
+    end
+
+    -- A Roblox vehicle facing its LookVector has positive pitch when its nose rises.
+    local look = root.CFrame.LookVector
+    return math.asin(math.clamp(look.Y, -1, 1))
+end
 
 local function stopWheelie()
     if wheelieConnection then
@@ -1235,87 +1714,129 @@ local function stopWheelie()
         wheelieConnection = nil
     end
 
-    if wheelieAlign then
-        wheelieAlign:Destroy()
-        wheelieAlign = nil
-    end
-
-    if wheelieAttachment then
-        wheelieAttachment:Destroy()
-        wheelieAttachment = nil
+    -- Remove the controller's pitch spin, but leave yaw/roll spin untouched.
+    if wheelieRoot and wheelieRoot.Parent and not wheelieRoot.Anchored then
+        local axis = wheelieRoot.CFrame.RightVector
+        local angularVelocity = wheelieRoot.AssemblyAngularVelocity
+        local pitchRate = angularVelocity:Dot(axis)
+        wheelieRoot.AssemblyAngularVelocity = angularVelocity - axis * pitchRate
     end
 
     wheelieRoot = nil
+    wheelieVehicle = nil
+    wheelieSeat = nil
+    wheelieBasePitch = nil
+end
+
+local function stopWheelieState(message, color)
+    autoWheelie = false
+    wheelieButton.Text = "OFF"
+    wheelieButton.BackgroundColor3 = COLORS.Button
+    stopWheelie()
+    if message then
+        setStatus(message, color or COLORS.Muted)
+    end
 end
 
 local function startWheelie()
     stopWheelie()
 
     local vehicle, seat = getVehicle()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
-    if not vehicle then
-        autoWheelie = false
-        wheelieButton.Text = "OFF"
-        setStatus("Sit on your scooter first.", COLORS.Red)
+    if not vehicle or not seat or not humanoid or humanoid.SeatPart ~= seat then
+        stopWheelieState("Sit on your scooter first.", COLORS.Red)
         return
     end
 
-    local root = getRootPart(vehicle, seat)
+    if not seat:IsA("BasePart") then
+        stopWheelieState("The scooter seat is not a BasePart.", COLORS.Red)
+        return
+    end
 
-    if not root or root.Anchored then
-        autoWheelie = false
-        wheelieButton.Text = "OFF"
-        setStatus("Cannot control this scooter.", COLORS.Red)
+    -- Use the physical assembly root connected to the seat. This makes the
+    -- complete welded scooter chassis pitch together, including its front wheel.
+    local fallbackRoot = getRootPart(vehicle, seat)
+    local root = seat.AssemblyRootPart or fallbackRoot
+
+    if not root or not root:IsA("BasePart") or root.Anchored then
+        stopWheelieState("Cannot control the scooter's physical assembly.", COLORS.Red)
+        return
+    end
+
+    local basePitch = getPitchFromRoot(root)
+    if basePitch == nil then
+        stopWheelieState("Could not read the scooter angle.", COLORS.Red)
         return
     end
 
     wheelieRoot = root
+    wheelieVehicle = vehicle
+    wheelieSeat = seat
+    wheelieBasePitch = basePitch
 
-    local attachment = Instance.new("Attachment")
-    attachment.Name = "EasySenpWheelieAttachment"
-    attachment.Parent = root
-    wheelieAttachment = attachment
-
-    local align = Instance.new("AlignOrientation")
-    align.Name = "EasySenpWheelieAlign"
-    align.Mode = Enum.OrientationAlignmentMode.OneAttachment
-    align.Attachment0 = attachment
-    align.RigidityEnabled = false
-    align.Responsiveness = WHEELIE_RESPONSE
-    align.MaxTorque = WHEELIE_TORQUE
-    align.MaxAngularVelocity = 4
-    align.Parent = root
-    wheelieAlign = align
-
-    wheelieConnection = RunService.Heartbeat:Connect(function()
+    wheelieConnection = RunService.Heartbeat:Connect(function(dt)
         if guiDestroyed or not autoWheelie then
             stopWheelie()
             return
         end
 
-        if not wheelieRoot or not wheelieRoot.Parent then
-            stopWheelie()
-            autoWheelie = false
-            wheelieButton.Text = "OFF"
-            setStatus("Scooter not found.", COLORS.Red)
+        if not wheelieRoot or not wheelieRoot.Parent or wheelieRoot.Anchored
+            or not wheelieVehicle or not wheelieVehicle.Parent
+            or not wheelieSeat or not wheelieSeat.Parent then
+            stopWheelieState("Scooter assembly was lost.", COLORS.Red)
             return
         end
 
-        local look = wheelieRoot.CFrame.LookVector
-        local flatLook = Vector3.new(look.X, 0, look.Z)
-
-        if flatLook.Magnitude > 0.001 then
-            flatLook = flatLook.Unit
-
-            local yaw = math.atan2(-flatLook.X, -flatLook.Z)
-            local heading = CFrame.Angles(0, yaw, 0)
-
-            align.CFrame = heading.Rotation
-                * CFrame.Angles(WHEELIE_ANGLE, 0, 0)
+        local currentVehicle, currentSeat = getVehicle()
+        if currentVehicle ~= wheelieVehicle or currentSeat ~= wheelieSeat then
+            stopWheelieState("Auto Wheelie stopped because you left the scooter.", COLORS.Muted)
+            return
         end
+
+        local currentPitch = getPitchFromRoot(wheelieRoot)
+        if currentPitch == nil then
+            stopWheelieState("Could not measure the scooter angle.", COLORS.Red)
+            return
+        end
+
+        -- Slider sets the actual nose-up pitch relative to the angle at activation.
+        -- 88.5 degrees is used internally at the 90-degree end to avoid a vertical
+        -- orientation singularity while keeping the requested maximum near-vertical.
+        local requestedAngle = math.rad(wheelieAngleDegrees)
+        local targetPitch = math.clamp(
+            wheelieBasePitch + requestedAngle,
+            -WHEELIE_MAX_TARGET_PITCH,
+            WHEELIE_MAX_TARGET_PITCH
+        )
+        local pitchError = targetPitch - currentPitch
+
+        -- The local RightVector is the scooter's pitch axis. The PD controller
+        -- continuously corrects gravity, wheel contact and physics drift, holding
+        -- the selected front-wheel lift while the option remains ON.
+        local pitchAxis = wheelieRoot.CFrame.RightVector
+        local assemblyAngularVelocity = wheelieRoot.AssemblyAngularVelocity
+        local currentPitchRate = assemblyAngularVelocity:Dot(pitchAxis)
+
+        local desiredPitchRate = math.clamp(
+            pitchError * WHEELIE_P_GAIN - currentPitchRate * WHEELIE_D_GAIN,
+            -WHEELIE_MAX_ANGULAR_SPEED,
+            WHEELIE_MAX_ANGULAR_SPEED
+        )
+
+        -- Keep angular velocity around the other axes (steering/roll) intact.
+        local otherAngularVelocity = assemblyAngularVelocity
+            - pitchAxis * currentPitchRate
+
+        wheelieRoot.AssemblyAngularVelocity =
+            otherAngularVelocity + pitchAxis * desiredPitchRate
     end)
 
-    setStatus("Auto Wheelie enabled.", COLORS.Green)
+    setStatus(
+        "Front wheel held up • " .. tostring(wheelieAngleDegrees) .. "°",
+        COLORS.Green
+    )
 end
 
 wheelieButton.Activated:Connect(function()
@@ -1326,7 +1847,7 @@ wheelieButton.Activated:Connect(function()
     if autoWheelie then
         autoWheelie = false
         wheelieButton.Text = "OFF"
-        wheelieButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+        wheelieButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
         stopWheelie()
         setStatus("Auto Wheelie disabled.", COLORS.Muted)
     else
@@ -1337,7 +1858,7 @@ wheelieButton.Activated:Connect(function()
 
         if not autoWheelie then
             wheelieButton.Text = "OFF"
-            wheelieButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+            wheelieButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
         end
     end
 end)
@@ -1453,7 +1974,7 @@ attachButton.Activated:Connect(function()
     if attachEnabled then
         attachEnabled = false
         attachButton.Text = "OFF"
-        attachButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+        attachButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
         stopAttach()
         setStatus("Attach to Scooter disabled.", COLORS.Muted)
     else
@@ -1463,7 +1984,7 @@ attachButton.Activated:Connect(function()
         startAttach()
         if not attachEnabled then
             attachButton.Text = "OFF"
-            attachButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+            attachButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
         end
     end
 end)
@@ -1688,7 +2209,7 @@ farmButton.Activated:Connect(function()
         farmToken += 1
 
         farmButton.Text = "START"
-        farmButton.BackgroundColor3 = Color3.fromRGB(48, 40, 64)
+        farmButton.BackgroundColor3 = Color3.fromRGB(58, 31, 26)
         setStatus("Money Farm stopped.", COLORS.Muted)
         return
     end
@@ -1750,12 +2271,33 @@ panicButton.Activated:Connect(function()
     autoWheelie = false
     attachEnabled = false
     speedEnabled = false
+    wheelieSliderDragging = false
+    if wheelieSliderInputChanged then
+        wheelieSliderInputChanged:Disconnect()
+        wheelieSliderInputChanged = nil
+    end
+    if wheelieSliderInputEnded then
+        wheelieSliderInputEnded:Disconnect()
+        wheelieSliderInputEnded = nil
+    end
 
     farmToken += 1
 
     stopWheelie()
     stopAttach()
     stopSpeedChanger()
+
+    -- Remove the custom helmet and restore hair visibility during emergency cleanup.
+    if selectedCustomHelmet ~= nil then
+        selectedCustomHelmet = nil
+    end
+    if removeCustomHelmet then
+        removeCustomHelmet()
+    end
+    if helmetRespawnConnection then
+        helmetRespawnConnection:Disconnect()
+        helmetRespawnConnection = nil
+    end
 
     gui:Destroy()
 end)
